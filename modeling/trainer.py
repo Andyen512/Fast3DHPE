@@ -1,0 +1,379 @@
+import os, torch
+from torch.cuda.amp import autocast, GradScaler
+from engine.dist import is_main_process
+from .loss_aggregator import LossAggregator
+from remote_pdb import set_trace
+import torch.distributed as dist
+
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from einops import rearrange, repeat
+from time import time
+from .evaluation.evaluator import evaluate
+
+
+def save_checkpoint(model, optimizer, scheduler, scaler, cfg, out_dir,
+                    epoch, metric=None, is_best=False, tag=None, logger=None):
+    """
+    通用 checkpoint 保存函数（rank0-only）
+
+    Args:
+        model: nn.Module 或 DDP 包裹的模型
+        optimizer: torch.optim.Optimizer
+        scheduler: torch.optim.lr_scheduler._LRScheduler or None
+        scaler: torch.cuda.amp.GradScaler or None
+        cfg: 当前 config dict（保存以便复现）
+        out_dir: str, 保存根目录
+        epoch: int, 当前 epoch
+        metric: float or None, 可选验证指标（比如 val_loss）
+        is_best: bool, 是否保存为 best.pth
+        tag: str or None, 文件名附加标签（如 'epoch_10'）
+        logger: logger 对象，可选
+    """
+    if not is_main_process():
+        return
+
+    os.makedirs(out_dir, exist_ok=True)
+    ckpt_dir = os.path.join(out_dir, "checkpoints")
+    os.makedirs(ckpt_dir, exist_ok=True)
+
+    # 取出模型（去掉 DDP wrapper）
+    model_to_save = model.module if hasattr(model, "module") else model
+    lr = optimizer.param_groups[0]["lr"]
+
+    state = {
+        "epoch": epoch,
+        "lr": lr,
+        "model": model_to_save.state_dict(),
+        "optimizer": optimizer.state_dict() if optimizer else None,
+        "scheduler": scheduler.state_dict() if scheduler else None,
+        "scaler": scaler.state_dict() if scaler else None,
+        "cfg": cfg,
+    }
+    if metric is not None:
+        state["metric"] = metric
+
+    if is_best:
+        save_path = os.path.join(ckpt_dir, "best_epoch.bin")
+    elif tag is not None:
+        save_path = os.path.join(ckpt_dir, f"{tag}.bin")
+    else:
+        save_path = os.path.join(ckpt_dir, f"epoch_{epoch}.bin")
+
+    torch.save(state, save_path)
+
+    if logger:
+        logger.info(f"Checkpoint saved: {save_path}")
+    else:
+        print(f"Checkpoint saved: {save_path}")
+
+class Trainer:
+    def __init__(self, cfg, logger, out_dir):
+        self.cfg = cfg
+        self.logger = logger
+        self.out_dir = out_dir
+        self.scaler = GradScaler(enabled=cfg.get("ENGINE", {}).get("amp", True))
+        # boneindextemp = cfg["MODEL"]["backbone"]["boneindextemp"]
+        # boneindextemp = boneindextemp.split(',')
+        # self.boneindex = []
+        # for i in range(0,len(boneindextemp),2):
+        #     self.boneindex.append([int(boneindextemp[i]), int(boneindextemp[i+1])])
+
+        loss_cfg = cfg.get("LOSS", {"type": "MPJPELoss", "log_prefix": "mpjpe", "loss_term_weight": 1.0})
+        self.loss_agg = LossAggregator(loss_cfg)
+        loss_eval = cfg.get("LOSS_EVAL", {"type": "MPJPELoss", "log_prefix": "mpjpe", "loss_term_weight": 1.0})
+        self.loss_eval = LossAggregator(loss_eval)
+        self.iteration = 0
+        self.optimizer = None
+        self.scheduler = None
+        self.lr = None
+        self.wd = None
+        self.lrd = None
+        self.best_rec = {"metric": float("inf"), "epoch": -1}
+        self.training = None
+
+    def _build_optim(self, model):
+        opt_cfg = self.cfg.get("OPTIM", {})
+        self.lr = opt_cfg.get("lr", 1e-4)
+        self.wd = opt_cfg.get("weight_decay", 0.0)
+        self.lrd = opt_cfg.get("lr_decay", 0.999)
+        return torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.wd)
+
+    def train(self, model, train_loader, val_loader, bundle, ckpt_path=None):
+        if train_loader is None:
+            if is_main_process():
+                self.logger.info("train_loader is None — fill datasets/builder.py to enable training.")
+            return
+
+        if self.optimizer is None:
+            self.optimizer = self._build_optim(model)
+
+        if ckpt_path is not None:
+            checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage, weights_only=False)
+            model.module.load_state_dict(checkpoint['model'], strict=False)
+            epoch = checkpoint['epoch']
+            self.best_rec["metric"] = checkpoint['metric']
+            self.best_rec["epoch"] = checkpoint['epoch']
+            if is_main_process():
+                print('This model was trained for {} epochs'.format(checkpoint['epoch']))
+            if 'optimizer' in checkpoint and checkpoint['optimizer'] is not None:
+                self.optimizer.load_state_dict(checkpoint['optimizer'])
+        
+        receptive_field = self.cfg["DATASET"]["number_of_frames"]
+        epochs = self.cfg.get("SCHED", {}).get("max_epochs", 1)
+        device = torch.device('cuda', torch.cuda.current_device()) if torch.cuda.is_available() else torch.device('cpu')
+        losses_3d_train = []
+        losses_3d_pos_train = []
+        losses_3d_valid = []
+
+        while epoch < epochs+1:
+            start_time = time()
+            model.train()
+            self.training = True
+            epoch_loss_3d_train = 0.0
+            epoch_loss_3d_pos_train = 0.0
+            N = 0
+            iteration = 0
+            quickdebug = self.cfg.get("DEBUG", False)
+            for cameras_train, batch_3d, batch_2d in train_loader:
+                if cameras_train is not None:
+                    cameras_train = cameras_train.float()
+                inputs_3d = batch_3d.float()
+                inputs_2d = batch_2d.float()
+
+                if torch.cuda.is_available():
+                    inputs_3d = inputs_3d.cuda(non_blocking=True)
+                    inputs_2d = inputs_2d.cuda(non_blocking=True)
+                    if cameras_train is not None:
+                        cameras_train = cameras_train.cuda(non_blocking=True)
+
+                inputs_3d[:, :, 0] = 0  # root 对齐
+
+                self.optimizer.zero_grad(set_to_none=True)
+                training_feat = model(inputs_2d, inputs_3d, None, self.training)
+
+                # training_feat = {
+                #                 "mpjpe": { "pred": predicted_3d_pos, "gt": inputs_3d },        # 键名要等于 cfg.LOSS[*].log_prefix
+                #                 # "bone":  { "pred": pred_3d, "gt": gt3d, "bone_index": self.bone_index },
+                #             }
+                
+                with autocast(enabled=self.scaler.is_enabled()):
+                    loss_total, loss_info = self.loss_agg(training_feat)
+                
+
+                loss_total.backward(loss_total.clone().detach())
+                self.optimizer.step()
+                
+
+                bs, ts = inputs_3d.shape[0], inputs_3d.shape[1]
+                epoch_loss_3d_train     += (bs * ts) * loss_info["loss_total"].detach().float().item()
+                epoch_loss_3d_pos_train += (bs * ts) * loss_info["loss_3d_pos"].detach().float().item()
+                N += (bs * ts)
+
+                iteration += 1
+                if quickdebug and N == (bs * ts):
+                    break
+
+
+            t = torch.tensor([epoch_loss_3d_train, epoch_loss_3d_pos_train, float(N)],
+                            device=device, dtype=torch.float32)
+            dist.all_reduce(t, op=dist.ReduceOp.SUM)
+            epoch_loss_3d_train, epoch_loss_3d_pos_train, N = t[0].item(), t[1].item(), int(t[2].item())
+
+            losses_3d_train.append(epoch_loss_3d_train / N)
+            losses_3d_pos_train.append(epoch_loss_3d_pos_train / N)
+
+            if self.cfg["EVAL"]:
+                self.training = False
+                model.eval()
+                local_sum = torch.zeros(1, device=device, dtype=torch.float32)
+                local_cnt = torch.zeros(1, device=device, dtype=torch.float32)
+
+                with torch.inference_mode():
+                    for cam, batch_3d, batch_2d in val_loader:
+                        if cam is not None:
+                            cam = cam.float()
+                        inputs_3d = batch_3d.float()
+                        inputs_2d = batch_2d.float()
+
+                        inputs_2d_flip = inputs_2d.clone()
+                        inputs_2d_flip[..., 0] *= -1
+                        inputs_2d_flip[..., bundle.joints_left + bundle.joints_right, :] = inputs_2d_flip[..., bundle.joints_right + bundle.joints_left, :]
+
+                        # 尺寸转换
+                        inputs_3d_p = inputs_3d
+                        inputs_2d, inputs_3d      = eval_data_prepare(receptive_field, inputs_2d, inputs_3d_p)
+                        inputs_2d_flip, _         = eval_data_prepare(receptive_field, inputs_2d_flip, inputs_3d_p)
+
+                        if torch.cuda.is_available():
+                            inputs_3d = inputs_3d.cuda(non_blocking=True)
+                            inputs_2d = inputs_2d.cuda(non_blocking=True)
+              
+                        inputs_3d[..., 0, :] = 0  # root 对齐
+                        pred_3d = model(inputs_2d, inputs_3d, inputs_2d_flip, self.training)
+
+                        # ====== 损失计算（和训练时保持一致）======
+                        training_feat = {
+                            "mpjpe": {"pred": pred_3d, "target": inputs_3d}
+                        }
+
+                        loss_total, loss_info = self.loss_eval(training_feat)
+
+                        bs, ts = inputs_3d.shape[0], inputs_3d.shape[1]
+                        local_sum += loss_total.detach() * (bs * ts)
+                        local_cnt += (bs * ts)
+                        
+
+                # ====== 分布式 all_reduce，同步到所有 GPU ======
+                dist.all_reduce(local_sum, op=dist.ReduceOp.SUM)
+                dist.all_reduce(local_cnt, op=dist.ReduceOp.SUM)
+
+                valid_scalar = (local_sum / local_cnt).item() if local_cnt.item() > 0 else float("inf")
+                
+                elapsed = (time() - start_time) / 60.0
+                if is_main_process():
+                    losses_3d_valid.append(valid_scalar)
+
+                    if self.cfg["EVAL"]:
+                        last_valid = float(losses_3d_valid[-1])
+                        # print('[%d] time %.2f lr %f 3d_train %f 3d_pos_train %f 3d_pos_valid %f' % (
+                        #     epoch + 1,
+                        #     elapsed,
+                        #     self.lr,
+                        #     losses_3d_train[-1] * 1000,
+                        #     losses_3d_pos_train[-1] * 1000,
+                        #     last_valid * 1000
+                        # ))
+                        self.logger.info(
+                            "[%d] time %.2f lr %.6f 3d_train %.3f 3d_pos_train %.3f 3d_pos_valid %.3f" % (
+                                epoch + 1,
+                                elapsed,
+                                self.optimizer.param_groups[0]['lr'],
+                                losses_3d_train[-1] * 1000,
+                                losses_3d_pos_train[-1] * 1000,
+                                last_valid * 1000
+                            )
+                        )
+
+                    if epoch % self.cfg["ENGINE"]["save_freq"] == 0:
+                        # 周期性保存
+                        save_checkpoint(model, self.optimizer, self.scheduler, self.scaler,
+                                        self.cfg, self.out_dir, epoch, tag=f"epoch_{epoch}", logger=self.logger)
+
+                    # 保存 best
+                    if self.cfg["EVAL"] and last_valid * 1000 < self.best_rec["metric"]:
+                        self.best_rec = {"metric": last_valid * 1000, "epoch": epoch}
+                        save_checkpoint(model, self.optimizer, self.scheduler, self.scaler,
+                                        self.cfg, self.out_dir, epoch, metric=last_valid * 1000,
+                                        is_best=True, logger=self.logger)
+                        
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] *= self.lrd
+                epoch += 1
+
+
+    def test(self, cfg, model, bundle_list, ckpt_path=None):
+        if self.optimizer is None:
+            self.optimizer = self._build_optim(model)
+
+        if ckpt_path is not None:
+            checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage, weights_only=False)
+            model.module.load_state_dict(checkpoint['model'], strict=False)
+            epoch = checkpoint['epoch']
+            if is_main_process():
+                print('This model was trained for {} epochs'.format(checkpoint['epoch']))
+                print('Loading evaluate checkpoint')
+            if 'optimizer' in checkpoint and checkpoint['optimizer'] is not None:
+                self.optimizer.load_state_dict(checkpoint['optimizer'])
+
+        errors_p1 = []
+        errors_p1_h = []
+        errors_p1_mean = []
+        errors_p1_select = []
+
+        errors_p2 = []
+        errors_p2_h = []
+        errors_p2_mean = []
+        errors_p2_select = []
+        set_trace()
+        for bundle in bundle_list:
+            test_loader = bundle.test_loader
+            action_key = bundle.action_key
+            action_filter = bundle.action_filter
+            kps_left = bundle.kps_left
+            kps_right = bundle.kps_right
+            joints_left = bundle.joints_left
+            joints_right = bundle.joints_right
+            if action_filter is not None:
+                found = False
+                for a in action_filter:
+                    if action_key.startswith(a):
+                        found = True
+                        break
+                if not found:
+                    continue
+            if test_loader is None:
+                if is_main_process():
+                    self.logger.info("train_loader is None — fill datasets/builder.py to enable training.")
+                return
+
+            if cfg['DATASET']['Test']['P2']:
+                e1, e1_h, e1_mean, e1_select, e2, e2_h, e2_mean, e2_select = evaluate(cfg, test_loader, model_pos=model , 
+                                                    kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, 
+                                                    joints_right=joints_right, action=action_key, logger=self.logger)
+            else:
+                e1, e1_h, e1_mean, e1_select = evaluate(cfg, test_loader, model_pos=model ,kps_left=kps_left, 
+                                                        kps_right=kps_right, joints_left=joints_left, 
+                                                        joints_right=joints_right, action=action_key, logger=self.logger)   
+
+            errors_p1.append(e1)
+            errors_p1_h.append(e1_h)
+            errors_p1_mean.append(e1_mean)
+            errors_p1_select.append(e1_select)
+
+            if cfg['DATASET']['Test']['P2']:
+                errors_p2.append(e2)
+                errors_p2_h.append(e2_h)
+                errors_p2_mean.append(e2_mean)
+                errors_p2_select.append(e2_select)
+
+        errors_p1 = torch.stack(errors_p1)
+        errors_p1_actionwise = torch.mean(errors_p1, dim=0)
+        errors_p1_h = torch.stack(errors_p1_h)
+        errors_p1_actionwise_h = torch.mean(errors_p1_h, dim=0)
+        errors_p1_mean = torch.stack(errors_p1_mean)
+        errors_p1_actionwise_mean = torch.mean(errors_p1_mean, dim=0)
+        errors_p1_select = torch.stack(errors_p1_select)
+        errors_p1_actionwise_select = torch.mean(errors_p1_select, dim=0)
+
+        if cfg['DATASET']['Test']['P2']:
+            errors_p2 = torch.stack(errors_p2)
+            errors_p2_actionwise = torch.mean(errors_p2, dim=0)
+            errors_p2_h = torch.stack(errors_p2_h)
+            errors_p2_actionwise_h = torch.mean(errors_p2_h, dim=0)
+            errors_p2_mean = torch.stack(errors_p2_mean)
+            errors_p2_actionwise_mean = torch.mean(errors_p2_mean, dim=0)
+            errors_p2_select = torch.stack(errors_p2_select)
+            errors_p2_actionwise_select = torch.mean(errors_p2_select, dim=0)
+
+        if is_main_process():
+            for ii in range(errors_p1_actionwise.shape[0]):
+                self.logger.info("step %d Protocol #1 (MPJPE) action-wise average J_Best: %.4f mm",
+                        ii, errors_p1_actionwise[ii].item())
+                self.logger.info("step %d Protocol #1 (MPJPE) action-wise average P_Best: %.4f mm",
+                        ii, errors_p1_actionwise_h[ii].item())
+                self.logger.info("step %d Protocol #1 (MPJPE) action-wise average P_Agg:  %.4f mm",
+                        ii, errors_p1_actionwise_mean[ii].item())
+                self.logger.info("step %d Protocol #1 (MPJPE) action-wise average J_Agg:  %.4f mm",
+                        ii, errors_p1_actionwise_select[ii].item())
+
+                if cfg['DATASET']['Test']['P2']:
+                    self.logger.info("step %d Protocol #2 (MPJPE) action-wise average J_Best: %.4f mm",
+                            ii, errors_p2_actionwise[ii].item())
+                    self.logger.info("step %d Protocol #2 (MPJPE) action-wise average P_Best: %.4f mm",
+                            ii, errors_p2_actionwise_h[ii].item())
+                    self.logger.info("step %d Protocol #2 (MPJPE) action-wise average P_Agg:  %.4f mm",
+                            ii, errors_p2_actionwise_mean[ii].item())
+                    self.logger.info("step %d Protocol #2 (MPJPE) action-wise average J_Agg:  %.4f mm",
+                            ii, errors_p2_actionwise_select[ii].item())
