@@ -3,7 +3,7 @@ from einops import rearrange, repeat
 from remote_pdb import set_trace
 from .eval_utils import *
 import os
-from engine.dist import is_main_process
+from modeling.dist import is_main_process
 
 
 def eval_data_prepare(receptive_field, inputs_2d, inputs_3d):

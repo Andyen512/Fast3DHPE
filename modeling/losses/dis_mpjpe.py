@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from einops import rearrange
 from remote_pdb import set_trace
+from .loss_utils import *
 
 def getbonelength(seq, boneindex):
     bs = seq.size(0)
@@ -47,19 +48,18 @@ class Dis_MPJPELoss(nn.Module):
 
     def forward(self, pred, gt, boneindex):
         # [B,T,J,3]
-        diff = (pred - gt)  # 单位由数据决定；如果你想强制 mm 可 *1000
-        mpjpe = diff.norm(dim=-1).mean()   # 先直接平均
+        loss_3d_pos = mpjpe(pred, gt)
 
         gt_len = getbonelength(gt, boneindex).mean(1)
         pd_len = getbonelength(pred, boneindex).mean(1)
-        loss_length = (gt_len - pd_len).pow(2).mean()
+        loss_length = torch.pow(gt_len - pd_len, 2).mean()
 
         gt_dir = getbonedirect(gt, boneindex)  # [N, B, 3]
         pd_dir = getbonedirect(pred, boneindex)
-        loss_dir = (gt_dir - pd_dir).pow(2).sum(3).mean()
+        loss_dir = torch.pow(gt_dir - pd_dir, 2).sum(3).mean()
 
-        loss_total = mpjpe + loss_length + loss_dir
+        loss_total = loss_3d_pos + loss_length + loss_dir
         
         return loss_total, {"loss_total": loss_total ,
-                       "loss_3d_pos": mpjpe}
+                       "loss_3d_pos": loss_3d_pos}
 

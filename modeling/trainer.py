@@ -1,6 +1,6 @@
 import os, torch
 from torch.cuda.amp import autocast, GradScaler
-from engine.dist import is_main_process
+from .dist import is_main_process
 from .loss_aggregator import LossAggregator
 from remote_pdb import set_trace
 import torch.distributed as dist
@@ -10,10 +10,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 from einops import rearrange, repeat
 from time import time
-from .evaluation.evaluator import evaluate
+from .evaluation.evaluator import *
 
 
-def save_checkpoint(model, optimizer, scheduler, scaler, cfg, out_dir,
+def save_checkpoint(model, optimizer, scheduler, cfg, out_dir,
                     epoch, metric=None, is_best=False, tag=None, logger=None):
     """
     通用 checkpoint 保存函数（rank0-only）
@@ -22,7 +22,6 @@ def save_checkpoint(model, optimizer, scheduler, scaler, cfg, out_dir,
         model: nn.Module 或 DDP 包裹的模型
         optimizer: torch.optim.Optimizer
         scheduler: torch.optim.lr_scheduler._LRScheduler or None
-        scaler: torch.cuda.amp.GradScaler or None
         cfg: 当前 config dict（保存以便复现）
         out_dir: str, 保存根目录
         epoch: int, 当前 epoch
@@ -48,7 +47,6 @@ def save_checkpoint(model, optimizer, scheduler, scaler, cfg, out_dir,
         "model": model_to_save.state_dict(),
         "optimizer": optimizer.state_dict() if optimizer else None,
         "scheduler": scheduler.state_dict() if scheduler else None,
-        "scaler": scaler.state_dict() if scaler else None,
         "cfg": cfg,
     }
     if metric is not None:
@@ -73,13 +71,6 @@ class Trainer:
         self.cfg = cfg
         self.logger = logger
         self.out_dir = out_dir
-        self.scaler = GradScaler(enabled=cfg.get("ENGINE", {}).get("amp", True))
-        # boneindextemp = cfg["MODEL"]["backbone"]["boneindextemp"]
-        # boneindextemp = boneindextemp.split(',')
-        # self.boneindex = []
-        # for i in range(0,len(boneindextemp),2):
-        #     self.boneindex.append([int(boneindextemp[i]), int(boneindextemp[i+1])])
-
         loss_cfg = cfg.get("LOSS", {"type": "MPJPELoss", "log_prefix": "mpjpe", "loss_term_weight": 1.0})
         self.loss_agg = LossAggregator(loss_cfg)
         loss_eval = cfg.get("LOSS_EVAL", {"type": "MPJPELoss", "log_prefix": "mpjpe", "loss_term_weight": 1.0})
@@ -96,7 +87,7 @@ class Trainer:
     def _build_optim(self, model):
         opt_cfg = self.cfg.get("OPTIM", {})
         self.lr = opt_cfg.get("lr", 1e-4)
-        self.wd = opt_cfg.get("weight_decay", 0.0)
+        self.wd = opt_cfg.get("weight_decay", 0.1)
         self.lrd = opt_cfg.get("lr_decay", 0.999)
         return torch.optim.AdamW(model.parameters(), lr=self.lr, weight_decay=self.wd)
 
@@ -109,6 +100,7 @@ class Trainer:
         if self.optimizer is None:
             self.optimizer = self._build_optim(model)
 
+        epoch = 0
         if ckpt_path is not None:
             checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage, weights_only=False)
             model.module.load_state_dict(checkpoint['model'], strict=False)
@@ -152,17 +144,12 @@ class Trainer:
 
                 self.optimizer.zero_grad(set_to_none=True)
                 training_feat = model(inputs_2d, inputs_3d, None, self.training)
-
-                # training_feat = {
-                #                 "mpjpe": { "pred": predicted_3d_pos, "gt": inputs_3d },        # 键名要等于 cfg.LOSS[*].log_prefix
-                #                 # "bone":  { "pred": pred_3d, "gt": gt3d, "bone_index": self.bone_index },
-                #             }
                 
-                with autocast(enabled=self.scaler.is_enabled()):
-                    loss_total, loss_info = self.loss_agg(training_feat)
+                # with autocast(enabled=self.scaler.is_enabled()):
+                #     loss_total, loss_info = self.loss_agg(training_feat)
                 
-
-                loss_total.backward(loss_total.clone().detach())
+                loss_total, loss_info = self.loss_agg(training_feat)
+                loss_total.backward()
                 self.optimizer.step()
                 
 
@@ -209,6 +196,7 @@ class Trainer:
                         if torch.cuda.is_available():
                             inputs_3d = inputs_3d.cuda(non_blocking=True)
                             inputs_2d = inputs_2d.cuda(non_blocking=True)
+                            inputs_2d_flip = inputs_2d_flip.cuda(non_blocking=True)
               
                         inputs_3d[..., 0, :] = 0  # root 对齐
                         pred_3d = model(inputs_2d, inputs_3d, inputs_2d_flip, self.training)
@@ -223,6 +211,9 @@ class Trainer:
                         bs, ts = inputs_3d.shape[0], inputs_3d.shape[1]
                         local_sum += loss_total.detach() * (bs * ts)
                         local_cnt += (bs * ts)
+                        
+                        del pred_3d, inputs_2d, inputs_2d_flip, inputs_3d
+                        torch.cuda.empty_cache()
                         
 
                 # ====== 分布式 all_reduce，同步到所有 GPU ======
@@ -258,13 +249,13 @@ class Trainer:
 
                     if epoch % self.cfg["ENGINE"]["save_freq"] == 0:
                         # 周期性保存
-                        save_checkpoint(model, self.optimizer, self.scheduler, self.scaler,
+                        save_checkpoint(model, self.optimizer, self.scheduler,
                                         self.cfg, self.out_dir, epoch, tag=f"epoch_{epoch}", logger=self.logger)
 
                     # 保存 best
                     if self.cfg["EVAL"] and last_valid * 1000 < self.best_rec["metric"]:
                         self.best_rec = {"metric": last_valid * 1000, "epoch": epoch}
-                        save_checkpoint(model, self.optimizer, self.scheduler, self.scaler,
+                        save_checkpoint(model, self.optimizer, self.scheduler,
                                         self.cfg, self.out_dir, epoch, metric=last_valid * 1000,
                                         is_best=True, logger=self.logger)
                         

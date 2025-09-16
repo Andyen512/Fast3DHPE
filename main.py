@@ -2,7 +2,7 @@ import os, argparse, torch, torch.nn as nn
 from utils.config import load_cfg
 from utils.logger import get_logger
 from utils.seed import set_seed
-from engine.dist import init_distributed_mode, is_main_process
+from modeling.dist import init_distributed_mode, is_main_process
 from modeling.registries import MODELS
 from datasets.builder import build_data_bundle, build_data_bundle_test
 from modeling.trainer import Trainer

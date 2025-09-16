@@ -393,7 +393,7 @@ class  HSTDenoiser(nn.Module):
         self.block_depth = depth
 
         self.STEblocks_0 = nn.ModuleList([            
-            Block_xxc(
+            Block(
                 dim=embed_dim_ratio, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[0], norm_layer=norm_layer, bonechain=bonechain)])
         self.STEblocks = nn.ModuleList([
@@ -464,14 +464,14 @@ class  HSTDenoiser(nn.Module):
         x = self.pos_drop(x)
 
         blk = self.STEblocks_0[0]
-        # x = blk(x)
-        # 给空间注意力传入多跳关系先验
-        x = blk(
-            x,
-            Hstack=self.Hstack,                   # [4, N, N]：H1/H2/H3/Hgt
-            hop_logits_attn=self.hop_logits_attn, # [num_heads, 4] 或 [4]
-            rel_alpha=self.rel_alpha,             # [num_heads]
-        )
+        x = blk(x)
+        # # 给空间注意力传入多跳关系先验
+        # x = blk(
+        #     x,
+        #     Hstack=self.Hstack,                   # [4, N, N]：H1/H2/H3/Hgt
+        #     hop_logits_attn=self.hop_logits_attn, # [num_heads, 4] 或 [4]
+        #     rel_alpha=self.rel_alpha,             # [num_heads]
+        # )
         # x = blk(x, vis=True)
 
         x = self.Spatial_norm(x)
