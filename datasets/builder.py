@@ -231,7 +231,7 @@ def build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, 
                 bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # 可在 cfg 里定义
             )
         )
-        return test_bundle_list
+    return test_bundle_list
 
 
 
@@ -248,23 +248,16 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
     _normalize_keypoints(dataset, keypoints_2d)
 
     # 划分 subject
-    subjects_train, subjects_semi, subjects_test = _build_splits(cfg)
-
-    
+    subjects_train, subjects_semi, subjects_test = _build_splits(cfg)    
 
     # 拉平成序列列表
     ds_cfg = cfg["DATASET"]
     subset       = float(ds_cfg.get("subset", 1.0))
     downsample   = int(ds_cfg.get("downsample", 1))   # 全局下采样
     T            = int(ds_cfg.get("seq_len", 243))
-    stride_train = int(ds_cfg.get("train_stride", T)) # 训练滑窗步长
-    stride_eval  = int(ds_cfg.get("eval_stride",  T)) # 验证/测试滑窗步长
-
     # 组装 Dataset & DataLoader
     # 注意：OpenGait 风格是 DDP 分布式采样器
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
-    bs = int(cfg["RUNTIME"].get("batch_size", 16))
-    nw = int(cfg["RUNTIME"].get("num_workers", 4))
 
     receptive_field = ds_cfg["number_of_frames"]
     batch_size = ds_cfg["batch_size"]
@@ -281,7 +274,6 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
                                 augment=True,
                                 kps_left=kps_left, kps_right=kps_right,
                                 joints_left=joints_left, joints_right=joints_right)
-        
         sampler = DistributedSampler(dataset, num_replicas=torch.distributed.get_world_size(), rank=dist.get_rank(), shuffle=True)
         train_loader = DataLoader(dataset, batch_size=batch_size//stride, sampler=sampler, num_workers=4, pin_memory=True)
        

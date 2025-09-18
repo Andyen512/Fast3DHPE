@@ -53,7 +53,7 @@ OPTIM:
   name: "AdamW"
   lr: 0.00025
   weight_decay: 0.1
-  lr_decay: 0.988
+  lr_decay: 0.990
 
 SCHED:
   name: "Cosine"
@@ -62,7 +62,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_ddhpose2_lr00025_lrd988"    # 保存路径的一部分
+  save_name: "h36m_ddhpose2_lr00025_lrd990_2"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: false
   log_interval: 50
@@ -71,9 +71,7 @@ ENGINE:
 
 # ========= 运行时设置 =========
 RUNTIME:
-  batch_size: 16
-  num_workers: 8
-  seed: 42
+  seed: 1
 
 DEBUG: False
 EVAL: True

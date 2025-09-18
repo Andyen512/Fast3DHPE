@@ -16,25 +16,11 @@ def parse_args():
     p.add_argument("--log_to_file", action="store_true")
     p.add_argument("--iter", type=int, default=0)
     p.add_argument("--phase", type=str, default="train", choices=["train", "test"])
-    p.add_argument("--resume", type=str, default="")       
+    p.add_argument("--resume", type=str, default="")
+    p.add_argument("--evaluate", type=str, default="")       
     p.add_argument("--checkpoint", type=str, default="", help="directory that contains checkpoints")
     return p.parse_args()
 
-def load_state_dict_safely(model: torch.nn.Module, ckpt_path: str, logger, strict_default=True):
-    assert os.path.isfile(ckpt_path), f"Checkpoint not found: {ckpt_path}"
-    obj = torch.load(ckpt_path, map_location="cpu")
-
-    # unwrap common wrappers
-    if isinstance(obj, dict):
-        for key in ["model", "state_dict", "model_state", "net", "module"]:
-            if key in obj and isinstance(obj[key], dict):
-                obj = obj[key]
-                break
-    state_dict = obj
-
-    model.load_state_dict(state_dict, strict=strict_default)
-    logger.info(f"Loaded checkpoint strictly: {ckpt_path}")
-    return
 
 def main():
     args = parse_args()
@@ -46,7 +32,7 @@ def main():
     if is_main_process(): logger.info(cfg)
 
     rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
-    set_seed(cfg.get("RUNTIME", {}).get("seed", 42) + rank)
+    set_seed(cfg.get("RUNTIME", {}).get("seed", 1))
     
     # 训练数据
     if args.phase == "train":
@@ -67,7 +53,7 @@ def main():
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank],
         find_unused_parameters=cfg.get("ENGINE", {}).get("find_unused_parameters", False))
 
-    if args.resume:
+    if args.resume or args.evaluate:
         tag = args.resume if args.resume else args.evaluate
         ckpt_root = args.checkpoint or os.path.join(out_dir, "checkpoints")
         ckpt_path = os.path.join(ckpt_root, tag)
@@ -85,6 +71,7 @@ def main():
             trainer.train(model, bundle.train_loader, bundle.val_loader, bundle, ckpt_path)
         else:
             trainer.train(model, bundle.train_loader, bundle.val_loader, bundle)
+
     else:
         trainer.test(cfg, model, bundle_list, ckpt_path)
 

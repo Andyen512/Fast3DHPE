@@ -99,7 +99,7 @@ class Trainer:
 
         if self.optimizer is None:
             self.optimizer = self._build_optim(model)
-
+        
         epoch = 0
         if ckpt_path is not None:
             checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage, weights_only=False)
@@ -287,7 +287,7 @@ class Trainer:
         errors_p2_h = []
         errors_p2_mean = []
         errors_p2_select = []
-        set_trace()
+
         for bundle in bundle_list:
             test_loader = bundle.test_loader
             action_key = bundle.action_key
