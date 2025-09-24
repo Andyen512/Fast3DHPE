@@ -94,7 +94,7 @@ class DDHPose(nn.Module):
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None, is_train=True,
                  test_time_augmentation=True, timestep=1000, scale=1.0, num_proposals=1, sampling_timesteps=1, 
-                 boneindextemp=None, joints_left=None, joints_right=None):
+                 boneindextemp=None, joints_left=None, joints_right=None, rootidx=0):
         super().__init__()
 
         self.joint_nums = num_joints
@@ -109,6 +109,7 @@ class DDHPose(nn.Module):
         self.boneindex = []
         for i in range(0,len(boneindextemp),2):
             self.boneindex.append([int(boneindextemp[i]), int(boneindextemp[i+1])])
+        self.rootidx = rootidx
 
         # build diffusion
         timesteps = timestep
@@ -265,9 +266,11 @@ class DDHPose(nn.Module):
             img_bone_t = x_start_bone * alpha_next.sqrt() + \
                     c * pred_noise_bone + \
                     sigma * noise_bone
-
-            img_dir[:,:,:,1:] = img_dir_t
-            img_bone[:,:,:,1:] = img_bone_t
+            
+            img_dir[:,:,:,:self.rootidx] = img_dir_t[:,:,:,:self.rootidx]
+            img_dir[:,:,:,self.rootidx+1:] = img_dir_t[:,:,:,self.rootidx:]
+            img_bone[:,:,:,:self.rootidx] = img_bone_t[:,:,:,:self.rootidx]
+            img_bone[:,:,:,self.rootidx+1:] = img_bone_t[:,:,:,self.rootidx:]
 
         return torch.stack(preds_all_pos, dim=1)
 
@@ -365,8 +368,10 @@ class DDHPose(nn.Module):
         targets_bone_length = torch.zeros(targets.shape[0],targets.shape[1],targets.shape[2],1).cuda()
         dir = getbonedirect(targets,self.boneindex)
         bone_length = getbonelength(targets,self.boneindex)
-        targets_dir[:,:,1:] = dir
-        targets_bone_length[:,:,1:] = bone_length
+        targets_dir[:,:,:self.rootidx] = dir[:,:,:self.rootidx]
+        targets_dir[:,:,self.rootidx+1:] = dir[:,:,self.rootidx:]
+        targets_bone_length[:,:,:self.rootidx] = bone_length[:,:,:self.rootidx]
+        targets_bone_length[:,:,self.rootidx+1:] = bone_length[:,:,self.rootidx:]
 
         for i in range(0,targets.shape[0]):
             targets_per_sample_dir = targets_dir[i]

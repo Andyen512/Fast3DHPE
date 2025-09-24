@@ -4,7 +4,7 @@ from utils.logger import get_logger
 from utils.seed import set_seed
 from modeling.dist import init_distributed_mode, is_main_process
 from modeling.registries import MODELS
-from datasets.builder import build_data_bundle, build_data_bundle_test
+from datasets.builder import *
 from modeling.trainer import Trainer
 from modeling import models
 from remote_pdb import set_trace
@@ -44,7 +44,7 @@ def main():
     # 构建模型
     model_name = cfg["MODEL"]["name"]
     Model = getattr(models, model_name)      
-    model = Model(**cfg["MODEL"]["backbone"], joints_left=bundle.joints_left, joints_right=bundle.joints_right)
+    model = Model(**cfg["MODEL"]["backbone"], joints_left=bundle.joints_left, joints_right=bundle.joints_right, rootidx=cfg["DATASET"]["Root_idx"])
 
     # 设备 & DDP
     local_rank = int(os.environ.get("LOCAL_RANK", args.local_rank))

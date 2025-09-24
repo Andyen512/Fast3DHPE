@@ -69,6 +69,8 @@ def save_checkpoint(model, optimizer, scheduler, cfg, out_dir,
 class Trainer:
     def __init__(self, cfg, logger, out_dir):
         self.cfg = cfg
+        self.dataset_cfg = cfg.get("DATASET", {})
+        self.root_idx = self.dataset_cfg['Root_idx']
         self.logger = logger
         self.out_dir = out_dir
         loss_cfg = cfg.get("LOSS", {"type": "MPJPELoss", "log_prefix": "mpjpe", "loss_term_weight": 1.0})
@@ -140,7 +142,7 @@ class Trainer:
                     if cameras_train is not None:
                         cameras_train = cameras_train.cuda(non_blocking=True)
 
-                inputs_3d[:, :, 0] = 0  # root 对齐
+                inputs_3d[:, :, self.root_idx] = 0  # root 对齐
 
                 self.optimizer.zero_grad(set_to_none=True)
                 training_feat = model(inputs_2d, inputs_3d, None, self.training)
@@ -198,7 +200,7 @@ class Trainer:
                             inputs_2d = inputs_2d.cuda(non_blocking=True)
                             inputs_2d_flip = inputs_2d_flip.cuda(non_blocking=True)
               
-                        inputs_3d[..., 0, :] = 0  # root 对齐
+                        inputs_3d[..., self.root_idx, :] = 0  # root 对齐
                         pred_3d = model(inputs_2d, inputs_3d, inputs_2d_flip, self.training)
 
                         # ====== 损失计算（和训练时保持一致）======
@@ -223,19 +225,20 @@ class Trainer:
                 valid_scalar = (local_sum / local_cnt).item() if local_cnt.item() > 0 else float("inf")
                 
                 elapsed = (time() - start_time) / 60.0
-                if is_main_process():
-                    losses_3d_valid.append(valid_scalar)
+                
+                losses_3d_valid.append(valid_scalar)
 
-                    if self.cfg["EVAL"]:
-                        last_valid = float(losses_3d_valid[-1])
-                        # print('[%d] time %.2f lr %f 3d_train %f 3d_pos_train %f 3d_pos_valid %f' % (
-                        #     epoch + 1,
-                        #     elapsed,
-                        #     self.lr,
-                        #     losses_3d_train[-1] * 1000,
-                        #     losses_3d_pos_train[-1] * 1000,
-                        #     last_valid * 1000
-                        # ))
+                if self.cfg["EVAL"]:
+                    last_valid = float(losses_3d_valid[-1])
+                    # print('[%d] time %.2f lr %f 3d_train %f 3d_pos_train %f 3d_pos_valid %f' % (
+                    #     epoch + 1,
+                    #     elapsed,
+                    #     self.lr,
+                    #     losses_3d_train[-1] * 1000,
+                    #     losses_3d_pos_train[-1] * 1000,
+                    #     last_valid * 1000
+                    # ))
+                    if is_main_process():
                         self.logger.info(
                             "[%d] time %.2f lr %.6f 3d_train %.3f 3d_pos_train %.3f 3d_pos_valid %.3f" % (
                                 epoch + 1,
@@ -247,21 +250,21 @@ class Trainer:
                             )
                         )
 
-                    if epoch % self.cfg["ENGINE"]["save_freq"] == 0:
-                        # 周期性保存
-                        save_checkpoint(model, self.optimizer, self.scheduler,
-                                        self.cfg, self.out_dir, epoch, tag=f"epoch_{epoch}", logger=self.logger)
+                if epoch % self.cfg["ENGINE"]["save_freq"] == 0:
+                    # 周期性保存
+                    save_checkpoint(model, self.optimizer, self.scheduler,
+                                    self.cfg, self.out_dir, epoch, tag=f"epoch_{epoch}", logger=self.logger)
 
-                    # 保存 best
-                    if self.cfg["EVAL"] and last_valid * 1000 < self.best_rec["metric"]:
-                        self.best_rec = {"metric": last_valid * 1000, "epoch": epoch}
-                        save_checkpoint(model, self.optimizer, self.scheduler,
-                                        self.cfg, self.out_dir, epoch, metric=last_valid * 1000,
-                                        is_best=True, logger=self.logger)
-                        
-                for param_group in self.optimizer.param_groups:
-                    param_group['lr'] *= self.lrd
-                epoch += 1
+                # 保存 best
+                if self.cfg["EVAL"] and last_valid * 1000 < self.best_rec["metric"]:
+                    self.best_rec = {"metric": last_valid * 1000, "epoch": epoch}
+                    save_checkpoint(model, self.optimizer, self.scheduler,
+                                    self.cfg, self.out_dir, epoch, metric=last_valid * 1000,
+                                    is_best=True, logger=self.logger)
+                    
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] *= self.lrd
+            epoch += 1
 
 
     def test(self, cfg, model, bundle_list, ckpt_path=None):

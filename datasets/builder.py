@@ -6,11 +6,13 @@ from torch.utils.data import Dataset, DataLoader, DistributedSampler
 
 # ===== 你项目里的真实路径：按需修改 =====
 from .camera import world_to_camera, normalize_screen_coordinates
-from .h36m_dataset import Human36mDataset   # 如果还有 HumanEva/Custom，可再加条件
+from .h36m_dataset import Human36mDataset   
+from .threedhp_dataset import ThreeDHPDataset
 # =======================================
 from remote_pdb import set_trace
 from .utils import *
-from .generators import *
+from .generators_h36m import *
+from .generators_3dhp import *
 import torch.distributed as dist
 
 @dataclass
@@ -32,25 +34,78 @@ class Bundle:
 def _load_dataset(cfg) -> object:
     name = cfg["DATASET"]["name"].lower()
     root = cfg["DATASET"].get("root", "data")
-    path_3d = os.path.join(root, f"data_3d_{name}.npz")
-
+    
     if name == "h36m" or name == "human3.6m":
+        path_3d = os.path.join(root, f"data_3d_{name}.npz")
         dataset = Human36mDataset(path_3d)
+        # 准备 3D：world->camera 并根对齐
+        for subject in dataset.subjects():
+            for action in dataset[subject].keys():
+                anim = dataset[subject][action]
+                if "positions" in anim:
+                    positions_3d = []
+                    for cam in anim["cameras"]:
+                        pos_3d = world_to_camera(anim["positions"], R=cam["orientation"], t=cam["translation"])
+                        pos_3d[:, 1:] -= pos_3d[:, :1]
+                        positions_3d.append(pos_3d)
+                    anim["positions_3d"] = positions_3d
+    elif name == "3dhp":
+        dataset = ThreeDHPDataset(root, name)
+        data_train = dataset.data_train
+        data_test = dataset.data_test
+        joints_left, kps_right = dataset.joints_left, dataset.joints_right
+
+        return data_train, data_test, joints_left, kps_right
     else:
         raise KeyError(f"Unsupported DATASET.name: {name}")
 
-    # 准备 3D：world->camera 并根对齐
-    for subject in dataset.subjects():
-        for action in dataset[subject].keys():
-            anim = dataset[subject][action]
-            if "positions" in anim:
-                positions_3d = []
-                for cam in anim["cameras"]:
-                    pos_3d = world_to_camera(anim["positions"], R=cam["orientation"], t=cam["translation"])
-                    pos_3d[:, 1:] -= pos_3d[:, :1]
-                    positions_3d.append(pos_3d)
-                anim["positions_3d"] = positions_3d
+
     return dataset
+
+def _load_keypoints_3DHP(data_train, data_test):
+    out_poses_3d_train = {}
+    out_poses_2d_train = {}
+    out_poses_3d_test = {}
+    out_poses_2d_test = {}
+    valid_frame = {}
+    for seq in data_train.keys():
+        for cam in data_train[seq][0].keys():
+            anim = data_train[seq][0][cam]
+
+            subject_name, seq_name = seq.split(" ")
+
+            data_3d = anim['data_3d']
+            data_3d[:, :14] -= data_3d[:, 14:15]
+            data_3d[:, 15:] -= data_3d[:, 14:15]
+            out_poses_3d_train[(subject_name, seq_name, cam)] = data_3d
+
+            data_2d = anim['data_2d']
+            data_2d[..., :2] = normalize_screen_coordinates(data_2d[..., :2], w=2048, h=2048)
+            out_poses_2d_train[(subject_name, seq_name, cam)] = data_2d
+
+    for seq in data_test.keys():
+
+        anim = data_test[seq]
+
+        valid_frame[seq] = anim["valid"]
+
+        data_3d = anim['data_3d']
+        data_3d[:, :14] -= data_3d[:, 14:15]
+        data_3d[:, 15:] -= data_3d[:, 14:15]
+        out_poses_3d_test[seq] = data_3d
+
+        data_2d = anim['data_2d']
+        
+        if seq == "TS5" or seq == "TS6":
+            width = 1920
+            height = 1080
+        else:
+            width = 2048
+            height = 2048
+        data_2d[..., :2] = normalize_screen_coordinates(data_2d[..., :2], w=width, h=height)
+        out_poses_2d_test[seq] = data_2d
+
+    return out_poses_3d_train, out_poses_2d_train, out_poses_3d_test, out_poses_2d_test
 
 def _load_keypoints_2d(cfg, dataset) -> Tuple[dict, dict, List[int], List[int], List[int], List[int]]:
     name = cfg["DATASET"]["name"].lower()
@@ -199,7 +254,7 @@ def fetch_actions(actions, keypoints, dataset, downsample=1):
 
     return out_camera_params, out_poses_3d, out_poses_2d
 
-def build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, dataset, keypoints, actions, action_filter=None, training=False):
+def build_data_bundle_test_H36M(cfg, kps_left, kps_right, joints_left, joints_right, dataset, keypoints, actions, action_filter=None, training=False, PoseUnchunkedDataset=None):
     test_bundle_list = []
     for action_key in actions.keys():
         if action_filter is not None:
@@ -233,23 +288,41 @@ def build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, 
         )
     return test_bundle_list
 
-
-
-
+def build_data_bundle_test_3DHP(cfg, kps_left, kps_right, joints_left, joints_right, poses_valid, poses_valid_2d, actions, action_filter=None, training=False, PoseUnchunkedDataset=None):
+    test_bundle_list = []
+    for action_key in poses_valid.keys():
+        if action_filter is not None:
+            found = False
+            for a in action_filter:
+                if action_key.startswith(a):
+                    found = True
+                    break
+            if not found:
+                continue
+       
+        act_dataset = PoseUnchunkedDataset(poses_valid_2d, poses_valid, None,
+                                        pad=(cfg["DATASET"]["number_of_frames"] -1) // 2, 
+                                        causal_shift=0, augment=True,
+                                        kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
+                                        joints_right=joints_right)
+        
+        test_loader = DataLoader(act_dataset, batch_size=1, shuffle=False, num_workers=0)
+        test_bundle_list.append(
+            Bundle(
+                test_loader=test_loader,
+                dataset=act_dataset,
+                # keypoints_2d=keypoints,
+                kps_left=kps_left, kps_right=kps_right,
+                joints_left=joints_left, joints_right=joints_right,
+                action_key=action_key,
+                action_filter=action_filter,
+                bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # 可在 cfg 里定义
+            )
+        )
+    return test_bundle_list
 
 def build_data_bundle(cfg, training: bool = True) -> Bundle:
-    # 读取 + 预处理
-    dataset = _load_dataset(cfg)
-    keypoints_2d, keypoints_meta, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
-
-    # 对齐长度 & 归一化
-    if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):
-        _align_kp_and_mocap_lengths(dataset, keypoints_2d)
-    _normalize_keypoints(dataset, keypoints_2d)
-
-    # 划分 subject
-    subjects_train, subjects_semi, subjects_test = _build_splits(cfg)    
-
+    name = cfg["DATASET"]["name"]
     # 拉平成序列列表
     ds_cfg = cfg["DATASET"]
     subset       = float(ds_cfg.get("subset", 1.0))
@@ -264,10 +337,40 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
     stride = ds_cfg["stride"]
     causal_shift = 0
 
+    chunk_cls_name = f"PoseChunkDataset_{name}"
+    unchunk_cls_name = f"PoseUnchunkedDataset_{name}"
+    try:
+        ChunkDataset = eval(chunk_cls_name)
+        UnchunkDataset = eval(unchunk_cls_name)
+    except NameError as e:
+        raise ValueError(f"找不到对应的数据集类: {e}")
+
+    # 读取 + 预处理
+    if name == "H36M":
+        dataset = _load_dataset(cfg)
+        keypoints_2d, keypoints_meta, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
+
+        # 对齐长度 & 归一化
+        if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):
+            _align_kp_and_mocap_lengths(dataset, keypoints_2d)
+        _normalize_keypoints(dataset, keypoints_2d)
+
+        # 划分 subject
+        subjects_train, subjects_semi, subjects_test = _build_splits(cfg)  
+
+        if training:
+            cameras_train, poses_train, poses_train_2d = fetch(dataset, keypoints_2d, subjects_train, subset=subset, downsample=downsample)
+            cameras_valid, poses_valid, poses_valid_2d = fetch(dataset, keypoints_2d, subjects_test,  subset=1.0, downsample=downsample)
+
+    elif name == "3DHP":
+        data_train, data_test, kps_left, kps_right = _load_dataset(cfg)
+        joints_left, joints_right = kps_left, kps_right
+        poses_train, poses_train_2d, poses_valid, poses_valid_2d   = _load_keypoints_3DHP(data_train, data_test)
+        cameras_train, cameras_valid = None, None
+        
+
     if training:
-        cameras_train, poses_train, poses_train_2d = fetch(dataset, keypoints_2d, subjects_train, subset=subset, downsample=downsample)
-        cameras_valid, poses_valid, poses_valid_2d = fetch(dataset, keypoints_2d, subjects_test,  subset=1.0, downsample=downsample)
-        dataset = PoseChunkDataset(poses_train_2d, poses_train, cameras_train,
+        dataset = ChunkDataset(poses_train_2d, poses_train, cameras_train,
                                 chunk_length=ds_cfg["number_of_frames"],
                                 pad= (receptive_field -1) // 2, 
                                 causal_shift=causal_shift,
@@ -278,7 +381,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
         train_loader = DataLoader(dataset, batch_size=batch_size//stride, sampler=sampler, num_workers=4, pin_memory=True)
        
         # 验证集简单用测试 subject 的较稀疏滑窗
-        val_dataset = PoseUnchunkedDataset(poses_valid_2d, poses_valid, cameras_valid,
+        val_dataset = UnchunkDataset(poses_valid_2d, poses_valid, cameras_valid,
                 pad=(receptive_field -1) // 2, 
                 causal_shift=causal_shift,
                 augment=False,
@@ -299,14 +402,21 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
             train_loader=train_loader,
             val_loader=val_loader,
             dataset=dataset,
-            keypoints_2d=keypoints_2d,
+            # keypoints_2d=keypoints_2d,
             kps_left=kps_left, kps_right=kps_right,
             joints_left=joints_left, joints_right=joints_right,
             bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # 可在 cfg 里定义
         )
     else:
-        all_actions, action_filter = get_all_actions_by_subject(cfg, dataset, subjects_test)
-        bundle_list = build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, dataset, keypoints_2d, all_actions, action_filter)
+        build_data_bundle_test = eval(f"build_data_bundle_test_{name}")
+        if name == "H36M":
+            all_actions, action_filter = get_all_actions_by_subject(cfg, dataset, subjects_test)
+            bundle_list = build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, dataset, keypoints_2d, \
+                                                 all_actions, action_filter, UnchunkDataset)
+        elif name == "3DHP":
+            all_actions, action_filter = {}, None
+            bundle_list = build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, poses_valid, poses_valid_2d, \
+                                                 all_actions, action_filter, PoseUnchunkedDataset=UnchunkDataset)
 
         return bundle_list
 
