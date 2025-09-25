@@ -288,7 +288,7 @@ class  MixSTE2(nn.Module):
 class  MixSTE(nn.Module):
     def __init__(self, num_frame=9, num_joints=17, in_chans=2, embed_dim_ratio=32, depth=4,
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
-                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None, joints_left=None, joints_right=None):
+                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None, joints_left=None, joints_right=None, rootidx=0):
         super().__init__()  
 
         self.model_pos = MixSTE2(num_frame, num_joints, in_chans, embed_dim_ratio, depth,
@@ -296,9 +296,10 @@ class  MixSTE(nn.Module):
                         drop_rate, attn_drop_rate, drop_path_rate,  norm_layer)
         self.joints_left = joints_left
         self.joints_right = joints_right
+        self.rootidx = rootidx
         
         
-    def forward(self, inputs_2d, inputs_3d, inputs_2d_flip=None):
+    def forward(self, inputs_2d, inputs_3d, inputs_2d_flip=None, istrain=False):
         predicted_3d_pos = self.model_pos(inputs_2d)
         if inputs_2d_flip is not None:
             predicted_3d_pos_flip = self.model_pos(inputs_2d_flip)
@@ -308,8 +309,11 @@ class  MixSTE(nn.Module):
             #     predicted_3d_pos[i,:,:,:] = (predicted_3d_pos[i,:,:,:] + predicted_3d_pos_flip[i,:,:,:])/2
             predicted_3d_pos = (predicted_3d_pos + predicted_3d_pos_flip) / 2
         
-        # return predicted_3d_pos
-        training_feat = {
-                        "mpjpe": { "pred": predicted_3d_pos, "gt": inputs_3d },        # 键名要等于 cfg.LOSS[*].log_prefix
-                    }
-        return training_feat
+        if istrain:
+            # return predicted_3d_pos
+            training_feat = {
+                            "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d },        # 键名要等于 cfg.LOSS[*].log_prefix
+                        }
+            return training_feat
+        else:
+            return predicted_3d_pos

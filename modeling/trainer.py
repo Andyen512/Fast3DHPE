@@ -202,7 +202,7 @@ class Trainer:
               
                         inputs_3d[..., self.root_idx, :] = 0  # root 对齐
                         pred_3d = model(inputs_2d, inputs_3d, inputs_2d_flip, self.training)
-
+                
                         # ====== 损失计算（和训练时保持一致）======
                         training_feat = {
                             "mpjpe": {"pred": pred_3d, "target": inputs_3d}

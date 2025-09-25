@@ -1,6 +1,6 @@
 # ========= 数据集部分 =========
 DATASET:
-  name: "h36m"                   # 数据集名称，会影响加载路径
+  name: "H36M"                   # 数据集名称，会影响加载路径
   root: "data"                   # 存放 data_3d_h36m.npz / data_2d_h36m_xxx.npz 的目录
   keypoints: "cpn_ft_h36m_dbb"   # 你用的 2D 关键点检测器名字
   subjects_train: "S1,S5,S6,S7,S8"   # 训练 subject
@@ -11,14 +11,10 @@ DATASET:
   train_stride: 81               # 训练时滑窗步长（例：81）
   eval_stride: 243               # 测试时滑窗步长（整段一窗）
   subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
-  bone_index:                     # 如果要骨长/骨向损失，可以列出骨骼 (i,j) 对
-    - [0, 1]
-    - [1, 2]
-    - [2, 3]
-    # ... 你可以从 skeleton 里补全
   number_of_frames: 243
   batch_size: 1024
   stride: 243
+  Root_idx: 0
 
 # ========= 模型部分 =========
 MODEL:
@@ -31,7 +27,7 @@ MODEL:
     depth: 8
     num_heads: 8
     mlp_ratio: 2.0
-    qkv_bias: True,
+    qkv_bias: True
     drop_path_rate: 0.1
 
 # ========= 损失 =========
@@ -40,14 +36,18 @@ LOSS:
   log_prefix: "mpjpe"
   loss_term_weight: 1.0
 
+LOSS_EVAL:
+  type: "MPJPELoss"
+  log_prefix: "mpjpe"
+  loss_term_weight: 1.0
+
+
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.000150
-  weight_decay: 0.05
-  betas: [0.9, 0.999]
-  clip_grad_norm: 1.0
-  lr_decay: 0.999
+  lr: 0.00010
+  weight_decay: 0.1
+  lr_decay: 0.990
 
 SCHED:
   name: "Cosine"
@@ -56,18 +56,16 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_mixste2"    # 保存路径的一部分
+  save_name: "h36m_mixste_lr00010_lrd990"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: false
   log_interval: 50
   val_interval: 1
-  save_freq: 100
-  
+  save_freq: 200
+
 # ========= 运行时设置 =========
 RUNTIME:
-  batch_size: 16
-  num_workers: 8
-  seed: 42
+  seed: 1
 
 DEBUG: False
 EVAL: True
