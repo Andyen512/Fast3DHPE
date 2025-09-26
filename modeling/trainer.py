@@ -180,7 +180,7 @@ class Trainer:
                 local_cnt = torch.zeros(1, device=device, dtype=torch.float32)
 
                 with torch.inference_mode():
-                    for cam, batch_3d, batch_2d in val_loader:
+                    for cam, batch_3d, batch_2d, _ in val_loader:
                         if cam is not None:
                             cam = cam.float()
                         inputs_3d = batch_3d.float()
@@ -202,7 +202,7 @@ class Trainer:
               
                         inputs_3d[..., self.root_idx, :] = 0  # root 对齐
                         pred_3d = model(inputs_2d, inputs_3d, inputs_2d_flip, self.training)
-                
+
                         # ====== 损失计算（和训练时保持一致）======
                         training_feat = {
                             "mpjpe": {"pred": pred_3d, "target": inputs_3d}
@@ -268,6 +268,7 @@ class Trainer:
 
 
     def test(self, cfg, model, bundle_list, ckpt_path=None):
+        model_name = cfg["MODEL"]["name"]
         if self.optimizer is None:
             self.optimizer = self._build_optim(model)
 
@@ -281,15 +282,21 @@ class Trainer:
             if 'optimizer' in checkpoint and checkpoint['optimizer'] is not None:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
 
-        errors_p1 = []
-        errors_p1_h = []
-        errors_p1_mean = []
-        errors_p1_select = []
+        if model_name == 'DDHPose':
+            errors_p1 = []
+            errors_p1_h = []
+            errors_p1_mean = []
+            errors_p1_select = []
 
-        errors_p2 = []
-        errors_p2_h = []
-        errors_p2_mean = []
-        errors_p2_select = []
+            errors_p2 = []
+            errors_p2_h = []
+            errors_p2_mean = []
+            errors_p2_select = []
+        elif model_name == 'MixSTE':
+            errors_p1 = []
+            errors_p2 = []
+            errors_p3 = []
+            errors_vel = []
 
         for bundle in bundle_list:
             test_loader = bundle.test_loader
@@ -312,62 +319,78 @@ class Trainer:
                     self.logger.info("train_loader is None — fill datasets/builder.py to enable training.")
                 return
 
-            if cfg['DATASET']['Test']['P2']:
-                e1, e1_h, e1_mean, e1_select, e2, e2_h, e2_mean, e2_select = evaluate(cfg, test_loader, model_pos=model , 
-                                                    kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, 
-                                                    joints_right=joints_right, action=action_key, logger=self.logger)
-            else:
-                e1, e1_h, e1_mean, e1_select = evaluate(cfg, test_loader, model_pos=model ,kps_left=kps_left, 
-                                                        kps_right=kps_right, joints_left=joints_left, 
-                                                        joints_right=joints_right, action=action_key, logger=self.logger)   
+            if model_name == 'DDHPose':
+                if cfg['DATASET']['Test']['P2']:
+                    e1, e1_h, e1_mean, e1_select, e2, e2_h, e2_mean, e2_select = evaluate(cfg, test_loader, model_pos=model , 
+                                                        kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, 
+                                                        joints_right=joints_right, action=action_key, logger=self.logger)
+                else:
+                    e1, e1_h, e1_mean, e1_select = evaluate(cfg, test_loader, model_pos=model ,kps_left=kps_left, 
+                                                            kps_right=kps_right, joints_left=joints_left, 
+                                                            joints_right=joints_right, action=action_key, logger=self.logger)   
 
-            errors_p1.append(e1)
-            errors_p1_h.append(e1_h)
-            errors_p1_mean.append(e1_mean)
-            errors_p1_select.append(e1_select)
-
-            if cfg['DATASET']['Test']['P2']:
-                errors_p2.append(e2)
-                errors_p2_h.append(e2_h)
-                errors_p2_mean.append(e2_mean)
-                errors_p2_select.append(e2_select)
-
-        errors_p1 = torch.stack(errors_p1)
-        errors_p1_actionwise = torch.mean(errors_p1, dim=0)
-        errors_p1_h = torch.stack(errors_p1_h)
-        errors_p1_actionwise_h = torch.mean(errors_p1_h, dim=0)
-        errors_p1_mean = torch.stack(errors_p1_mean)
-        errors_p1_actionwise_mean = torch.mean(errors_p1_mean, dim=0)
-        errors_p1_select = torch.stack(errors_p1_select)
-        errors_p1_actionwise_select = torch.mean(errors_p1_select, dim=0)
-
-        if cfg['DATASET']['Test']['P2']:
-            errors_p2 = torch.stack(errors_p2)
-            errors_p2_actionwise = torch.mean(errors_p2, dim=0)
-            errors_p2_h = torch.stack(errors_p2_h)
-            errors_p2_actionwise_h = torch.mean(errors_p2_h, dim=0)
-            errors_p2_mean = torch.stack(errors_p2_mean)
-            errors_p2_actionwise_mean = torch.mean(errors_p2_mean, dim=0)
-            errors_p2_select = torch.stack(errors_p2_select)
-            errors_p2_actionwise_select = torch.mean(errors_p2_select, dim=0)
-
-        if is_main_process():
-            for ii in range(errors_p1_actionwise.shape[0]):
-                self.logger.info("step %d Protocol #1 (MPJPE) action-wise average J_Best: %.4f mm",
-                        ii, errors_p1_actionwise[ii].item())
-                self.logger.info("step %d Protocol #1 (MPJPE) action-wise average P_Best: %.4f mm",
-                        ii, errors_p1_actionwise_h[ii].item())
-                self.logger.info("step %d Protocol #1 (MPJPE) action-wise average P_Agg:  %.4f mm",
-                        ii, errors_p1_actionwise_mean[ii].item())
-                self.logger.info("step %d Protocol #1 (MPJPE) action-wise average J_Agg:  %.4f mm",
-                        ii, errors_p1_actionwise_select[ii].item())
+                errors_p1.append(e1)
+                errors_p1_h.append(e1_h)
+                errors_p1_mean.append(e1_mean)
+                errors_p1_select.append(e1_select)
 
                 if cfg['DATASET']['Test']['P2']:
-                    self.logger.info("step %d Protocol #2 (MPJPE) action-wise average J_Best: %.4f mm",
-                            ii, errors_p2_actionwise[ii].item())
-                    self.logger.info("step %d Protocol #2 (MPJPE) action-wise average P_Best: %.4f mm",
-                            ii, errors_p2_actionwise_h[ii].item())
-                    self.logger.info("step %d Protocol #2 (MPJPE) action-wise average P_Agg:  %.4f mm",
-                            ii, errors_p2_actionwise_mean[ii].item())
-                    self.logger.info("step %d Protocol #2 (MPJPE) action-wise average J_Agg:  %.4f mm",
-                            ii, errors_p2_actionwise_select[ii].item())
+                    errors_p2.append(e2)
+                    errors_p2_h.append(e2_h)
+                    errors_p2_mean.append(e2_mean)
+                    errors_p2_select.append(e2_select)
+
+            elif model_name == 'MixSTE':
+                e1, e2, e3, ev = evaluate(cfg, test_loader, model_pos=model ,kps_left=kps_left, 
+                                        kps_right=kps_right, joints_left=joints_left, 
+                                        joints_right=joints_right, action=action_key, logger=self.logger)   
+                errors_p1.append(e1)
+                errors_p2.append(e2)
+                errors_p3.append(e3)
+                errors_vel.append(ev)
+
+        if model_name == 'DDHPose':
+            errors_p1 = torch.stack(errors_p1)
+            errors_p1_actionwise = torch.mean(errors_p1, dim=0)
+            errors_p1_h = torch.stack(errors_p1_h)
+            errors_p1_actionwise_h = torch.mean(errors_p1_h, dim=0)
+            errors_p1_mean = torch.stack(errors_p1_mean)
+            errors_p1_actionwise_mean = torch.mean(errors_p1_mean, dim=0)
+            errors_p1_select = torch.stack(errors_p1_select)
+            errors_p1_actionwise_select = torch.mean(errors_p1_select, dim=0)
+
+            if cfg['DATASET']['Test']['P2']:
+                errors_p2 = torch.stack(errors_p2)
+                errors_p2_actionwise = torch.mean(errors_p2, dim=0)
+                errors_p2_h = torch.stack(errors_p2_h)
+                errors_p2_actionwise_h = torch.mean(errors_p2_h, dim=0)
+                errors_p2_mean = torch.stack(errors_p2_mean)
+                errors_p2_actionwise_mean = torch.mean(errors_p2_mean, dim=0)
+                errors_p2_select = torch.stack(errors_p2_select)
+                errors_p2_actionwise_select = torch.mean(errors_p2_select, dim=0)
+
+            if is_main_process():
+                for ii in range(errors_p1_actionwise.shape[0]):
+                    self.logger.info("step %d Protocol #1 (MPJPE) action-wise average J_Best: %.4f mm",
+                            ii, errors_p1_actionwise[ii].item())
+                    self.logger.info("step %d Protocol #1 (MPJPE) action-wise average P_Best: %.4f mm",
+                            ii, errors_p1_actionwise_h[ii].item())
+                    self.logger.info("step %d Protocol #1 (MPJPE) action-wise average P_Agg:  %.4f mm",
+                            ii, errors_p1_actionwise_mean[ii].item())
+                    self.logger.info("step %d Protocol #1 (MPJPE) action-wise average J_Agg:  %.4f mm",
+                            ii, errors_p1_actionwise_select[ii].item())
+
+                    if cfg['DATASET']['Test']['P2']:
+                        self.logger.info("step %d Protocol #2 (MPJPE) action-wise average J_Best: %.4f mm",
+                                ii, errors_p2_actionwise[ii].item())
+                        self.logger.info("step %d Protocol #2 (MPJPE) action-wise average P_Best: %.4f mm",
+                                ii, errors_p2_actionwise_h[ii].item())
+                        self.logger.info("step %d Protocol #2 (MPJPE) action-wise average P_Agg:  %.4f mm",
+                                ii, errors_p2_actionwise_mean[ii].item())
+                        self.logger.info("step %d Protocol #2 (MPJPE) action-wise average J_Agg:  %.4f mm",
+                                ii, errors_p2_actionwise_select[ii].item())
+        elif model_name == 'MixSTE':
+            self.logger.info('Protocol #1   (MPJPE) action-wise average: %.1f mm', torch.mean(torch.stack(errors_p1)).item())
+            self.logger.info('Protocol #2 (P-MPJPE) action-wise average: %.1f mm', torch.mean(torch.stack(errors_p2)).item())
+            self.logger.info('Protocol #3 (N-MPJPE) action-wise average: %.1f mm', torch.mean(torch.stack(errors_p3)).item())
+            self.logger.info('Velocity      (MPJVE) action-wise average: %.2f mm', torch.mean(torch.stack(errors_vel)).item())

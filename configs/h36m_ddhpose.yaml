@@ -1,6 +1,6 @@
 # ========= 数据集部分 =========
 DATASET:
-  name: "H36M"                   # 数据集名称，会影响加载路径
+  name: "h36m"                   # 数据集名称，会影响加载路径
   root: "data"                   # 存放 data_3d_h36m.npz / data_2d_h36m_xxx.npz 的目录
   keypoints: "cpn_ft_h36m_dbb"   # 你用的 2D 关键点检测器名字
   subjects_train: "S1,S5,S6,S7,S8"   # 训练 subject
@@ -13,7 +13,10 @@ DATASET:
   number_of_frames: 243
   batch_size: 768
   stride: 243
-      
+
+  Test:
+    actions: '*'   
+    P2: True         
 
 # ========= 模型部分 =========
 MODEL:

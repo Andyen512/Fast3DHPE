@@ -251,7 +251,7 @@ class  MixSTE2(nn.Module):
         # x = x.view(b, f, -1)
         return x
 
-    def forward(self, x, x3d=None):
+    def forward(self, x):
         b, f, n, c = x.shape
         ### now x is [batch_size, 2 channels, receptive frames, joint_num], following image data
         # x shape:(b f n c)
@@ -299,10 +299,11 @@ class  MixSTE(nn.Module):
         self.rootidx = rootidx
         
         
-    def forward(self, inputs_2d, inputs_3d, inputs_2d_flip=None, istrain=False):
+    def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False):
         predicted_3d_pos = self.model_pos(inputs_2d)
-        if inputs_2d_flip is not None:
-            predicted_3d_pos_flip = self.model_pos(inputs_2d_flip)
+        
+        if input_2d_flip is not None:
+            predicted_3d_pos_flip = self.model_pos(input_2d_flip)
             predicted_3d_pos_flip[..., 0] *= -1
             predicted_3d_pos_flip[:, :, self.joints_left + self.joints_right] = predicted_3d_pos_flip[:, :, self.joints_right + self.joints_left]
             # for i in range(predicted_3d_pos.shape[0]):

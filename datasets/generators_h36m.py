@@ -147,4 +147,4 @@ class PoseUnchunkedDataset_H36M(Dataset):
             chunk_2d[1, :, self.kps_left + self.kps_right] = chunk_2d[1, :, self.kps_right + self.kps_left]
 
 
-        return cam, chunk_3d, chunk_2d
+        return cam, chunk_3d, chunk_2d, None

@@ -16,6 +16,10 @@ DATASET:
   stride: 243
   Root_idx: 0
 
+  Test:
+    actions: '*'   
+    P2: True 
+
 # ========= 模型部分 =========
 MODEL:
   name: "MixSTE"
@@ -45,9 +49,9 @@ LOSS_EVAL:
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00010
+  lr: 0.00015
   weight_decay: 0.1
-  lr_decay: 0.990
+  lr_decay: 0.988
 
 SCHED:
   name: "Cosine"

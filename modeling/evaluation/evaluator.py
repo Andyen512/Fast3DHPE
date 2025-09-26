@@ -43,12 +43,6 @@ def eval_data_prepare(receptive_field, inputs_2d, inputs_3d):
 # ---------- DDHPOSE 输出与返回 ----------
 def report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=None, cam_data=None):
     dataset_name = cfg['DATASET']['name']
-    
-    epoch_loss_3d_pos, epoch_loss_3d_pos_h, epoch_loss_3d_pos_mean, epoch_loss_3d_pos_select = \
-        p1_dict['epoch_loss_3d_pos'], p1_dict['epoch_loss_3d_pos_h'], p1_dict['epoch_loss_3d_pos_mean'], p1_dict['epoch_loss_3d_pos_select']
-    epoch_loss_3d_pos_p2, epoch_loss_3d_pos_h_p2, epoch_loss_3d_pos_mean_p2, epoch_loss_3d_pos_select_p2 = \
-        p2_dict['epoch_loss_3d_pos_p2'], p2_dict['epoch_loss_3d_pos_h_p2'], p2_dict['epoch_loss_3d_pos_mean_p2'], p2_dict['epoch_loss_3d_pos_select_p2']
-    
     # 2d reprojection
     b_sz, t_sz, h_sz, f_sz, j_sz, c_sz =predicted_3d_pos_single.shape
     
@@ -68,10 +62,10 @@ def report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, 
     error_mean = mpjpe_diffusion_all_min(predicted_3d_pos_single, inputs_3d_single, mean_pos=True) # P-Agg
     error_reproj_select = mpjpe_diffusion_reproj(predicted_3d_pos_single, inputs_3d_single, reproject_2d, inputs_2d_single) # J-Agg
 
-    epoch_loss_3d_pos += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * error.clone()
-    epoch_loss_3d_pos_h += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * error_h.clone()
-    epoch_loss_3d_pos_mean += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * error_mean.clone()
-    epoch_loss_3d_pos_select += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * error_reproj_select.clone()
+    p1_dict['epoch_loss_3d_pos'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * error.clone()
+    p1_dict['epoch_loss_3d_pos_h'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * error_h.clone()
+    p1_dict['epoch_loss_3d_pos_mean'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * error_mean.clone()
+    p1_dict['epoch_loss_3d_pos_select'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * error_reproj_select.clone()
     
     if cfg['DATASET']['Test']['P2']:
         error_p2 = p_mpjpe_diffusion_all_min(predicted_3d_pos_single, inputs_3d_single)
@@ -79,23 +73,26 @@ def report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, 
         error_mean_p2 = p_mpjpe_diffusion_all_min(predicted_3d_pos_single, inputs_3d_single, mean_pos=True)
         error_reproj_select_p2 = p_mpjpe_diffusion_reproj(predicted_3d_pos_single, inputs_3d_single, reproject_2d, inputs_2d_single)
 
-        epoch_loss_3d_pos_p2 += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_p2)
-        epoch_loss_3d_pos_h_p2 += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_h_p2)
-        epoch_loss_3d_pos_mean_p2 += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_mean_p2)
-        epoch_loss_3d_pos_select_p2 += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_reproj_select_p2)
+        p2_dict['epoch_loss_3d_pos'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_p2)
+        p2_dict['epoch_loss_3d_pos_h_p2'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_h_p2)
+        p2_dict['epoch_loss_3d_pos_mean_p2'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_mean_p2)
+        p2_dict['epoch_loss_3d_pos_select_p2'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_reproj_select_p2)
 
 
 # ---------- MIXSTE 输出与返回 ----------
-def report_and_return_mixste(predicted_3d_pos_single, inputs_3d_single, p1_dict):
-    epoch_loss_3d_pos_scale, epoch_loss_3d_pos, epoch_loss_3d_pos_procrustes, epoch_loss_3d_vel = \
-        p1_dict['epoch_loss_3d_pos_scale'], p1_dict['epoch_loss_3d_pos'], p1_dict['epoch_loss_3d_pos_procrustes'], p1_dict['epoch_loss_3d_vel']
+def report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict):
     error = mpjpe(predicted_3d_pos_single, inputs_3d_single)
-    epoch_loss_3d_pos_scale += predicted_3d_pos_single.shape[0]*inputs_3d_single.shape[1] * n_mpjpe(predicted_3d_pos_single, inputs_3d_single).item()
-    epoch_loss_3d_pos += inputs_3d_single.shape[0]*inputs_3d_single.shape[1] * error.item()
+
+    p1_dict['epoch_loss_3d_pos_scale'] += (predicted_3d_pos_single.shape[0] * inputs_3d_single.shape[1] * n_mpjpe(predicted_3d_pos_single, inputs_3d_single))
+    p1_dict['epoch_loss_3d_pos'] += (inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * error)
+
     inputs = inputs_3d_single.cpu().numpy().reshape(-1, inputs_3d_single.shape[-2], inputs_3d_single.shape[-1])
     predicted_3d_pos = predicted_3d_pos_single.cpu().numpy().reshape(-1, inputs_3d_single.shape[-2], inputs_3d_single.shape[-1])
-    epoch_loss_3d_pos_procrustes += inputs_3d_single.shape[0]*inputs_3d_single.shape[1] * p_mpjpe(predicted_3d_pos, inputs)
-    epoch_loss_3d_vel += inputs_3d_single.shape[0]*inputs_3d_single.shape[1] * mean_velocity_error(predicted_3d_pos, inputs)
+
+    p1_dict['epoch_loss_3d_pos_procrustes'] += (inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.tensor(p_mpjpe(predicted_3d_pos, inputs)))
+    p1_dict['epoch_loss_3d_vel'] += (inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.tensor(mean_velocity_error(predicted_3d_pos, inputs)))
+
+    return p1_dict
 
 @torch.no_grad()
 def evaluate( cfg, 
@@ -123,12 +120,12 @@ def evaluate( cfg,
             'epoch_loss_3d_pos_mean_p2': torch.zeros(model_cfg['backbone']['sampling_timesteps']),
             'epoch_loss_3d_pos_select_p2': torch.zeros(model_cfg['backbone']['sampling_timesteps'])
         }
-    else:
+    elif model_name == 'MixSTE':
         p1_dict = {
-            'epoch_loss_3d_pos': 0,
-            'epoch_loss_3d_pos_procrustes': 0,
-            'epoch_loss_3d_pos_scale': 0,
-            'epoch_loss_3d_vel': 0
+            'epoch_loss_3d_pos': torch.zeros(1).cuda(),
+            'epoch_loss_3d_pos_procrustes': torch.zeros(1).cuda(),
+            'epoch_loss_3d_pos_scale': torch.zeros(1).cuda(),
+            'epoch_loss_3d_vel': torch.zeros(1).cuda()
         }
 
     with torch.no_grad():
@@ -144,12 +141,15 @@ def evaluate( cfg,
         name = cfg["DATASET"]["name"]
         root_idx = cfg["DATASET"]["Root_idx"]
         for cam, batch_3d, batch_2d, seq_name in test_loader:
-            if seq_name == "TS5" or seq_name == "TS6":
+            if name == '3DHP':
+                if seq_name == "TS5" or seq_name == "TS6":
+                    reproject_func = project_to_2d
+                    cam_data = [2048, 2048, 10, 10] #width, height, sensorSize_x, sensorSize_y
+                else:
+                    reproject_func = project_to_2d_linear
+                    cam_data = [1920, 1080, 10, 5.625]  # width, height, sensorSize_x, sensorSize_y
+            elif name == 'H36M':
                 reproject_func = project_to_2d
-                cam_data = [2048, 2048, 10, 10] #width, height, sensorSize_x, sensorSize_y
-            else:
-                reproject_func = project_to_2d_linear
-                cam_data = [1920, 1080, 10, 5.625]  # width, height, sensorSize_x, sensorSize_y
             cam = cam.squeeze(0)
             batch_3d = batch_3d.squeeze(0)
             batch_2d = batch_2d.squeeze(0)
@@ -195,13 +195,14 @@ def evaluate( cfg,
                     inputs_3d_single = inputs_3d[batch_cnt * bs:(batch_cnt+1) * bs]
                     inputs_traj_single = inputs_traj[batch_cnt * bs:(batch_cnt + 1) * bs]
 
-                predicted_3d_pos_single = model_eval(inputs_2d_single, inputs_3d_single, input_2d_flip=inputs_2d_flip_single) #b, t, h, f, j, c
+                
+                predicted_3d_pos_single = model_eval(inputs_2d=inputs_2d_single, inputs_3d=inputs_3d_single, input_2d_flip=inputs_2d_flip_single, istrain=False) #b, t, h, f, j, c
                 predicted_3d_pos_single[..., root_idx, :] = 0
 
                 if model_name == 'DDHPose':
                     report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
-                elif name == 'H36M':
-                    report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict, proj_func=reproject_func)
+                elif model_name == 'MixSTE':
+                    report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict)
 
                 
                 N += inputs_3d_single.shape[0] * inputs_3d_single.shape[1]
@@ -251,21 +252,11 @@ def evaluate( cfg,
             return e1, e1_h, e1_mean, e1_select, e2, e2_h, e2_mean, e2_select
         else:
             return e1, e1_h, e1_mean, e1_select
-    else:
-        if is_main_process():
-            if action is None:
-                logger.info("----------")
-            else:
-                logger.info("----%s----", action)
+    elif model_name == 'MixSTE':
         e1 = (p1_dict['epoch_loss_3d_pos'] / N)*1000
         e2 = (p1_dict['epoch_loss_3d_pos_procrustes'] / N)*1000
         e3 = (p1_dict['epoch_loss_3d_pos_scale'] / N)*1000
         ev = (p1_dict['epoch_loss_3d_vel'] / N)*1000
-        # print('Test time augmentation:', test_generator.augment_enabled())
-        print('Protocol #1 Error (MPJPE):', e1, 'mm')
-        print('Protocol #2 Error (P-MPJPE):', e2, 'mm')
-        print('Protocol #3 Error (N-MPJPE):', e3, 'mm')
-        print('Velocity Error (MPJVE):', ev, 'mm')
         if is_main_process():
             logger.info("Protocol #1 Error (MPJPE):   %.4f mm", e1)
             logger.info("Protocol #2 Error (P-MPJPE): %.4f mm", e2)

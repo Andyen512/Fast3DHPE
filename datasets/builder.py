@@ -14,6 +14,7 @@ from .utils import *
 from .generators_h36m import *
 from .generators_3dhp import *
 import torch.distributed as dist
+from .collate_fn import collate_keep_seqname
 
 @dataclass
 class Bundle:
@@ -171,6 +172,7 @@ def get_all_actions_by_subject(cfg, dataset, subjects_test):
             all_actions_flatten.append((subject, action))
             all_actions_by_subject[subject][action_name].append((subject, action))
     action_filter = None if cfg['DATASET']['Test']['actions'] == '*' else cfg['DATASET']['Test']['actions'].split(',')
+    
     return all_actions, action_filter
 
 # ---------------- 数据展开与窗口化 ----------------
@@ -273,7 +275,7 @@ def build_data_bundle_test_H36M(cfg, kps_left, kps_right, joints_left, joints_ri
                                         kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
                                         joints_right=joints_right)
 
-        test_loader = DataLoader(act_dataset, batch_size=1, shuffle=False, num_workers=0)
+        test_loader = DataLoader(act_dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=collate_keep_seqname)
         test_bundle_list.append(
             Bundle(
                 test_loader=test_loader,
@@ -344,7 +346,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
         UnchunkDataset = eval(unchunk_cls_name)
     except NameError as e:
         raise ValueError(f"找不到对应的数据集类: {e}")
-
+    
     # 读取 + 预处理
     if name == "H36M":
         dataset = _load_dataset(cfg)
@@ -396,7 +398,8 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
             shuffle=False,
             num_workers=2,                # eval 往往 GPU-bound，过大反而有IPC开销
             pin_memory=True,
-            persistent_workers=True       # PyTorch>=1.8，避免每轮重启
+            persistent_workers=True,       # PyTorch>=1.8，避免每轮重启
+            collate_fn=collate_keep_seqname
         )
         return Bundle(
             train_loader=train_loader,
@@ -412,7 +415,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
         if name == "H36M":
             all_actions, action_filter = get_all_actions_by_subject(cfg, dataset, subjects_test)
             bundle_list = build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, dataset, keypoints_2d, \
-                                                 all_actions, action_filter, UnchunkDataset)
+                                                 all_actions, action_filter, PoseUnchunkedDataset=UnchunkDataset)
         elif name == "3DHP":
             all_actions, action_filter = {}, None
             bundle_list = build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, poses_valid, poses_valid_2d, \
