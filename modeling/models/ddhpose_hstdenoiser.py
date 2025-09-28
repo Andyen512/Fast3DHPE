@@ -524,7 +524,7 @@ class  HSTDenoiser(nn.Module):
             b, f, n, c = x_2d.shape
         else:
             b, h, f, n, c = x_3d.shape
-
+            
         x_2d, t = x_2d.float(), t.float()
 
         x = self.STE_forward(x_2d, x_3d, t,)
