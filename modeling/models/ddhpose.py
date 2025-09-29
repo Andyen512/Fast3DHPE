@@ -284,7 +284,7 @@ class DDHPose(nn.Module):
 
         return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
 
-    def forward(self, input_2d, input_3d, input_2d_flip=None, istrain=False):
+    def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False):
         self.is_train = istrain
         # Prepare Proposals.
         if not self.is_train:
@@ -296,21 +296,21 @@ class DDHPose(nn.Module):
             self.self_condition = False
             self.box_renewal = True
             self.use_ensemble = True
-            pred_pose = self.ddim_sample_bone_dir(input_2d, input_3d, input_2d_flip=input_2d_flip)
+            pred_pose = self.ddim_sample_bone_dir(inputs_2d, inputs_3d, input_2d_flip=input_2d_flip)
             return pred_pose
 
         if self.is_train:
-            x_dir, dir_noises, x_bone_length, bone_length_noises, t = self.prepare_targets(input_3d)
+            x_dir, dir_noises, x_bone_length, bone_length_noises, t = self.prepare_targets(inputs_3d)
             x_dir = x_dir.float()
             x_bone_length = x_bone_length.float()
 
             t = t.squeeze(-1)
 
-            pred_pose = self.dir_bone_estimator(input_2d, x_dir, x_bone_length, t, self.is_train)
+            pred_pose = self.dir_bone_estimator(inputs_2d, x_dir, x_bone_length, t, self.is_train)
 
             # return pred_pose
             training_feat = {
-                            "dis_mpjpe": { "pred": pred_pose, "gt": input_3d, "boneindex": self.boneindex},        # 键名要等于 cfg.LOSS[*].log_prefix
+                            "dis_mpjpe": { "pred": pred_pose, "gt": inputs_3d, "boneindex": self.boneindex},        # 键名要等于 cfg.LOSS[*].log_prefix
                         }
             return training_feat
 

@@ -73,7 +73,7 @@ def report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, 
         error_mean_p2 = p_mpjpe_diffusion_all_min(predicted_3d_pos_single, inputs_3d_single, mean_pos=True)
         error_reproj_select_p2 = p_mpjpe_diffusion_reproj(predicted_3d_pos_single, inputs_3d_single, reproject_2d, inputs_2d_single)
 
-        p2_dict['epoch_loss_3d_pos'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_p2)
+        p2_dict['epoch_loss_3d_pos_p2'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_p2)
         p2_dict['epoch_loss_3d_pos_h_p2'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_h_p2)
         p2_dict['epoch_loss_3d_pos_mean_p2'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_mean_p2)
         p2_dict['epoch_loss_3d_pos_select_p2'] += inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * torch.from_numpy(error_reproj_select_p2)
@@ -150,6 +150,7 @@ def evaluate( cfg,
                     cam_data = [1920, 1080, 10, 5.625]  # width, height, sensorSize_x, sensorSize_y
             elif name == 'H36M':
                 reproject_func = project_to_2d
+                cam_data = None
             cam = cam.squeeze(0)
             batch_3d = batch_3d.squeeze(0)
             batch_2d = batch_2d.squeeze(0)
