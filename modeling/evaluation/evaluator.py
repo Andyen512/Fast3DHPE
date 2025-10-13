@@ -107,7 +107,7 @@ def evaluate( cfg,
     
     model_cfg = cfg['MODEL']
     model_name = model_cfg['name']
-    if model_name == 'DDHPose':
+    if model_name in ['DDHPose','D3DP']:
         p1_dict = {
             'epoch_loss_3d_pos': torch.zeros(model_cfg['backbone']['sampling_timesteps']).cuda(),
             'epoch_loss_3d_pos_h': torch.zeros(model_cfg['backbone']['sampling_timesteps']).cuda(),
@@ -200,7 +200,7 @@ def evaluate( cfg,
                 predicted_3d_pos_single = model_eval(inputs_2d=inputs_2d_single, inputs_3d=inputs_3d_single, input_2d_flip=inputs_2d_flip_single, istrain=False) #b, t, h, f, j, c
                 predicted_3d_pos_single[..., root_idx, :] = 0
 
-                if model_name == 'DDHPose':
+                if model_name in ['DDHPose','D3DP']:
                     report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
                 elif model_name == 'MixSTE':
                     report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict)
@@ -221,7 +221,7 @@ def evaluate( cfg,
         else:
             logger.info("----%s----", action)
 
-    if model_name == 'DDHPose':
+    if model_name in ['DDHPose','D3DP']:
         e1 = (p1_dict['epoch_loss_3d_pos'] / N)*1000
         e1_h = (p1_dict['epoch_loss_3d_pos_h'] / N) * 1000
         e1_mean = (p1_dict['epoch_loss_3d_pos_mean'] / N) * 1000
@@ -265,3 +265,4 @@ def evaluate( cfg,
             logger.info("Velocity Error (MPJVE):      %.4f mm", ev)
             logger.info("----------")
         return e1, e2, e3, ev
+    

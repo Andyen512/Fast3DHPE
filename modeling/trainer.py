@@ -282,7 +282,7 @@ class Trainer:
             if 'optimizer' in checkpoint and checkpoint['optimizer'] is not None:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
 
-        if model_name == 'DDHPose':
+        if model_name in ['DDHPose','D3DP']:
             errors_p1 = []
             errors_p1_h = []
             errors_p1_mean = []
@@ -319,7 +319,7 @@ class Trainer:
                     self.logger.info("train_loader is None — fill datasets/builder.py to enable training.")
                 return
 
-            if model_name == 'DDHPose':
+            if model_name in ['DDHPose','D3DP']:
                 if cfg['DATASET']['Test']['P2']:
                     e1, e1_h, e1_mean, e1_select, e2, e2_h, e2_mean, e2_select = evaluate(cfg, test_loader, model_pos=model , 
                                                         kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, 
@@ -349,7 +349,7 @@ class Trainer:
                 errors_p3.append(e3)
                 errors_vel.append(ev)
 
-        if model_name == 'DDHPose':
+        if model_name in ['DDHPose','D3DP']:
             errors_p1 = torch.stack(errors_p1)
             errors_p1_actionwise = torch.mean(errors_p1, dim=0)
             errors_p1_h = torch.stack(errors_p1_h)
