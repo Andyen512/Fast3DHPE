@@ -330,7 +330,7 @@ class D3DP(nn.Module):
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None, is_train=True,
                  test_time_augmentation=True, timestep=1000, scale=1.0, num_proposals=1, sampling_timesteps=1, 
-                 boneindextemp=None, joints_left=None, joints_right=None, rootidx=0):
+                 boneindextemp=None, joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
         super().__init__()
 
         self.joint_nums = num_joints
@@ -543,26 +543,26 @@ class D3DP(nn.Module):
 
         return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
 
-    def forward(self, input_2d, input_3d, input_2d_flip=None, istrain=False):
+    def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False):
         self.is_train = istrain
         # Prepare Proposals.
         if not self.is_train:
             if self.flip:
-                results = self.ddim_sample_flip(input_2d, input_3d, input_2d_flip=input_2d_flip)
+                results = self.ddim_sample_flip(inputs_2d, inputs_3d, input_2d_flip=input_2d_flip)
             else:
-                results = self.ddim_sample(input_2d, input_3d)
+                results = self.ddim_sample(inputs_2d, inputs_3d)
             return results
 
         if self.is_train:
-            x_poses, noises, t = self.prepare_targets(input_3d)
+            x_poses, noises, t = self.prepare_targets(inputs_3d)
             x_poses = x_poses.float()
             t = t.squeeze(-1)
 
-            pred_pose = self.pose_estimator(input_2d, x_poses, t, self.is_train)
+            pred_pose = self.pose_estimator(inputs_2d, x_poses, t, self.is_train)
 
             # return pred_pose
             training_feat = {
-                            "mpjpe": { "pred": pred_pose, "target": input_3d},        # 键名要等于 cfg.LOSS[*].log_prefix
+                            "mpjpe": { "pred": pred_pose, "target": inputs_3d},        # 键名要等于 cfg.LOSS[*].log_prefix
                         }
             return training_feat
 

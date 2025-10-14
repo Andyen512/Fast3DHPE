@@ -94,7 +94,7 @@ class DDHPose(nn.Module):
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None, is_train=True,
                  test_time_augmentation=True, timestep=1000, scale=1.0, num_proposals=1, sampling_timesteps=1, 
-                 boneindextemp=None, joints_left=None, joints_right=None, rootidx=0):
+                 boneindextemp=None, joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
         super().__init__()
 
         self.joint_nums = num_joints

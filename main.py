@@ -44,7 +44,8 @@ def main():
     # 构建模型
     model_name = cfg["MODEL"]["name"]
     Model = getattr(models, model_name)      
-    model = Model(**cfg["MODEL"]["backbone"], joints_left=bundle.joints_left, joints_right=bundle.joints_right, rootidx=cfg["DATASET"]["Root_idx"])
+    model = Model(**cfg["MODEL"]["backbone"], joints_left=bundle.joints_left, joints_right=bundle.joints_right, \
+                  rootidx=cfg["DATASET"]["Root_idx"], dataset_skeleton=bundle.dataset.skeleton())
 
     # 设备 & DDP
     local_rank = int(os.environ.get("LOCAL_RANK", args.local_rank))

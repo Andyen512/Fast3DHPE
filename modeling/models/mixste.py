@@ -288,7 +288,8 @@ class  MixSTE2(nn.Module):
 class  MixSTE(nn.Module):
     def __init__(self, num_frame=9, num_joints=17, in_chans=2, embed_dim_ratio=32, depth=4,
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
-                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None, joints_left=None, joints_right=None, rootidx=0):
+                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None, 
+                 joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
         super().__init__()  
 
         self.model_pos = MixSTE2(num_frame, num_joints, in_chans, embed_dim_ratio, depth,
