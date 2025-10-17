@@ -8,21 +8,20 @@ DATASET:
   subjects_test: "S9,S11"             # 半监督用的（可空）
   seq_len: 243                   # 每个 clip 的帧数
   downsample: 1                  # 全局下采样因子
-  train_stride: 81               # 训练时滑窗步长（例：81）
   eval_stride: 243               # 测试时滑窗步长（整段一窗）
   subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
   number_of_frames: 243
-  batch_size: 1024
+  batch_size: 768
   stride: 243
   Root_idx: 0
 
   Test:
     actions: '*'   
-    P2: True 
+    P2: True         
 
 # ========= 模型部分 =========
 MODEL:
-  name: "MixSTE"
+  name: "KTPFormer"
   backbone:
     num_frame: 243   # 对齐数据长度
     num_joints: 17
@@ -32,7 +31,9 @@ MODEL:
     num_heads: 8
     mlp_ratio: 2.0
     qkv_bias: True
-    drop_path_rate: 0.1
+    drop_rate: 0.
+    attn_drop_rate: 0.
+    drop_path_rate: 0.2
 
 # ========= 损失 =========
 LOSS:
@@ -45,13 +46,12 @@ LOSS_EVAL:
   log_prefix: "mpjpe"
   loss_term_weight: 1.0
 
-
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00015
+  lr: 0.00012
   weight_decay: 0.1
-  lr_decay: 0.988
+  lr_decay: 0.995
 
 SCHED:
   name: "Cosine"
@@ -60,7 +60,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_mixste_lr00015_lrd988"    # 保存路径的一部分
+  save_name: "h36m_D3DP_lr00012_lrd995_2"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: false
   log_interval: 50

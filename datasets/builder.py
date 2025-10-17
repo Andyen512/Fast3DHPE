@@ -279,7 +279,7 @@ def build_data_bundle_test_H36M(cfg, kps_left, kps_right, joints_left, joints_ri
         test_bundle_list.append(
             Bundle(
                 test_loader=test_loader,
-                dataset=act_dataset,
+                dataset=dataset,
                 keypoints_2d=keypoints,
                 kps_left=kps_left, kps_right=kps_right,
                 joints_left=joints_left, joints_right=joints_right,
@@ -372,15 +372,15 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
         
 
     if training:
-        dataset = ChunkDataset(poses_train_2d, poses_train, cameras_train,
+        train_dataset = ChunkDataset(poses_train_2d, poses_train, cameras_train,
                                 chunk_length=ds_cfg["number_of_frames"],
                                 pad= (receptive_field -1) // 2, 
                                 causal_shift=causal_shift,
                                 augment=True,
                                 kps_left=kps_left, kps_right=kps_right,
                                 joints_left=joints_left, joints_right=joints_right)
-        sampler = DistributedSampler(dataset, num_replicas=torch.distributed.get_world_size(), rank=dist.get_rank(), shuffle=True)
-        train_loader = DataLoader(dataset, batch_size=batch_size//stride, sampler=sampler, num_workers=4, pin_memory=True)
+        sampler = DistributedSampler(train_dataset, num_replicas=torch.distributed.get_world_size(), rank=dist.get_rank(), shuffle=True)
+        train_loader = DataLoader(train_dataset, batch_size=batch_size//stride, sampler=sampler, num_workers=4, pin_memory=True)
        
         # 验证集简单用测试 subject 的较稀疏滑窗
         val_dataset = UnchunkDataset(poses_valid_2d, poses_valid, cameras_valid,
