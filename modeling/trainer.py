@@ -253,7 +253,8 @@ class Trainer:
                 if epoch % self.cfg["ENGINE"]["save_freq"] == 0:
                     # 周期性保存
                     save_checkpoint(model, self.optimizer, self.scheduler,
-                                    self.cfg, self.out_dir, epoch, tag=f"epoch_{epoch}", logger=self.logger)
+                                    self.cfg, self.out_dir, epoch, metric=last_valid * 1000, 
+                                    tag=f"epoch_{epoch}", logger=self.logger)
 
                 # 保存 best
                 if self.cfg["EVAL"] and last_valid * 1000 < self.best_rec["metric"]:
