@@ -38,7 +38,7 @@ def _load_dataset(cfg) -> object:
     
     if name == "h36m" or name == "human3.6m":
         path_3d = os.path.join(root, f"data_3d_{name}.npz")
-        dataset = Human36mDataset(path_3d)
+        dataset = Human36mDataset(path_3d, cfg["DATASET"])
         # 准备 3D：world->camera 并根对齐
         for subject in dataset.subjects():
             for action in dataset[subject].keys():
@@ -112,15 +112,21 @@ def _load_keypoints_2d(cfg, dataset) -> Tuple[dict, dict, List[int], List[int], 
     name = cfg["DATASET"]["name"].lower()
     root = cfg["DATASET"].get("root", "data")
     kp_tag = cfg["DATASET"].get("keypoints", "cpn_ft_h36m_dbb")
-    path_2d = os.path.join(root, f"data_2d_{name}_{kp_tag}.npz")
+    if not cfg["DATASET"]["Cross_Dataset"]:
+        path_2d = os.path.join(root, f"data_2d_{name}_{kp_tag}.npz")
+        meta      = keypoints["metadata"].item()
+        sym       = meta["keypoints_symmetry"]
+        kps_left, kps_right = list(sym[0]), list(sym[1])
+        joints_left, joints_right = list(dataset.skeleton().joints_left()), list(dataset.skeleton().joints_right())
+    else:
+        path_2d = os.path.join(root, "h36m_16joints" , f"data_2d_{name}_{kp_tag}.npz")
+        joints_left, joints_right = list(dataset.skeleton().joints_left()), list(dataset.skeleton().joints_right())
+        kps_left, kps_right = joints_left, joints_right
 
     keypoints = np.load(path_2d, allow_pickle=True)
-    meta      = keypoints["metadata"].item()
-    sym       = meta["keypoints_symmetry"]
-    kps_left, kps_right = list(sym[0]), list(sym[1])
-    joints_left, joints_right = list(dataset.skeleton().joints_left()), list(dataset.skeleton().joints_right())
     keypoints_2d = keypoints["positions_2d"].item()
-    return keypoints_2d, meta, kps_left, kps_right, joints_left, joints_right
+
+    return keypoints_2d, kps_left, kps_right, joints_left, joints_right
 
 def _align_kp_and_mocap_lengths(dataset, keypoints_2d):
     for subject in dataset.subjects():
@@ -350,7 +356,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
     # 读取 + 预处理
     if name == "H36M":
         dataset = _load_dataset(cfg)
-        keypoints_2d, keypoints_meta, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
+        keypoints_2d, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
 
         # 对齐长度 & 归一化
         if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):

@@ -10,11 +10,32 @@ import copy
 from .skeleton import Skeleton
 from .mocap_dataset import MocapDataset
 from .camera import normalize_screen_coordinates, image_coordinates
-       
+from remote_pdb import set_trace
+
 h36m_skeleton = Skeleton(parents=[-1,  0,  1,  2,  3,  4,  0,  6,  7,  8,  9,  0, 11, 12, 13, 14, 12,
        16, 17, 18, 19, 20, 19, 22, 12, 24, 25, 26, 27, 28, 27, 30],
        joints_left=[6, 7, 8, 9, 10, 16, 17, 18, 19, 20, 21, 22, 23],
        joints_right=[1, 2, 3, 4, 5, 24, 25, 26, 27, 28, 29, 30, 31])
+
+# Joints in H3.6M -- data has 32 joints, but only 17 that move; these are the indices.
+H36M_NAMES = [''] * 32
+H36M_NAMES[0] = 'Hip'
+H36M_NAMES[1] = 'RHip'
+H36M_NAMES[2] = 'RKnee'
+H36M_NAMES[3] = 'RFoot'
+H36M_NAMES[6] = 'LHip'
+H36M_NAMES[7] = 'LKnee'
+H36M_NAMES[8] = 'LFoot'
+H36M_NAMES[12] = 'Spine'
+H36M_NAMES[13] = 'Thorax'
+H36M_NAMES[14] = 'Neck/Nose'
+H36M_NAMES[15] = 'Head'
+H36M_NAMES[17] = 'LShoulder'
+H36M_NAMES[18] = 'LElbow'
+H36M_NAMES[19] = 'LWrist'
+H36M_NAMES[25] = 'RShoulder'
+H36M_NAMES[26] = 'RElbow'
+H36M_NAMES[27] = 'RWrist'
 
 h36m_cameras_intrinsic_params = [
     {
@@ -207,7 +228,7 @@ h36m_cameras_extrinsic_params = {
 }
 
 class Human36mDataset(MocapDataset):
-    def __init__(self, path, remove_static_joints=True):
+    def __init__(self, path, cfg, remove_static_joints=True):
         super().__init__(fps=50, skeleton=h36m_skeleton)
         
         self._cameras = copy.deepcopy(h36m_cameras_extrinsic_params)
@@ -242,13 +263,25 @@ class Human36mDataset(MocapDataset):
                     'cameras': self._cameras[subject],
                 }
                 
-        if remove_static_joints:
+        if remove_static_joints and not cfg['Cross_Dataset']:
             # Bring the skeleton to 17 joints instead of the original 32
             self.remove_joints([4, 5, 9, 10, 11, 16, 20, 21, 22, 23, 24, 28, 29, 30, 31])
             
             # Rewire shoulders to the correct parents
             self._skeleton._parents[11] = 8
             self._skeleton._parents[14] = 8
+        else:
+            # Bring the skeleton to 16 joints instead of the original 32
+            joints = []
+            for i, x in enumerate(H36M_NAMES):
+                if x == '' or x == 'Neck/Nose':  # Remove 'Nose' to make SH and H36M 2D poses have the same dimension
+                    joints.append(i)
+            self.remove_joints(joints)
+
+            # Rewire shoulders to the correct parents
+            self._skeleton._parents[10] = 8
+            self._skeleton._parents[13] = 8      
+        
             
     def supports_semi_supervised(self):
         return True
