@@ -50,9 +50,9 @@ LOSS_EVAL:
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.0001
+  lr: 0.00012
   weight_decay: 0.1
-  lr_decay: 0.988
+  lr_decay: 0.990
 
 SCHED:
   name: "Cosine"
@@ -61,7 +61,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_mixste_lr0001_lrd988"    # 保存路径的一部分
+  save_name: "h36m_mixste_lr00012_lrd990"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: false
   log_interval: 50

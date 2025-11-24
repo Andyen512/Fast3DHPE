@@ -42,7 +42,7 @@ def eval_data_prepare(receptive_field, inputs_2d, inputs_3d):
 
 # ---------- DDHPOSE 输出与返回 ----------
 def report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=None, cam_data=None):
-    dataset_name = cfg['DATASET']['name']
+    dataset_name = cfg['DATASET']['train_dataset']
     # 2d reprojection
     b_sz, t_sz, h_sz, f_sz, j_sz, c_sz =predicted_3d_pos_single.shape
     
@@ -138,83 +138,115 @@ def evaluate( cfg,
 
         #num_batches = test_generator.batch_num()
         quickdebug=cfg['DEBUG']
-        name = cfg["DATASET"]["name"]
+        name = cfg["DATASET"]["train_dataset"]
         root_idx = cfg["DATASET"]["Root_idx"]
-        for cam, batch_3d, batch_2d, seq_name in test_loader:
-            if name == '3DHP':
-                if seq_name == "TS5" or seq_name == "TS6":
+
+        if cfg["DATASET"]['train_dataset'] == cfg["DATASET"]['test_dataset']:
+            for cam, batch_3d, batch_2d, seq_name in test_loader:
+                if name == '3DHP':
+                    if seq_name == "TS5" or seq_name == "TS6":
+                        reproject_func = project_to_2d
+                        cam_data = [2048, 2048, 10, 10] #width, height, sensorSize_x, sensorSize_y
+                    else:
+                        reproject_func = project_to_2d_linear
+                        cam_data = [1920, 1080, 10, 5.625]  # width, height, sensorSize_x, sensorSize_y
+                elif name == 'H36M':
                     reproject_func = project_to_2d
-                    cam_data = [2048, 2048, 10, 10] #width, height, sensorSize_x, sensorSize_y
-                else:
-                    reproject_func = project_to_2d_linear
-                    cam_data = [1920, 1080, 10, 5.625]  # width, height, sensorSize_x, sensorSize_y
-            elif name == 'H36M':
-                reproject_func = project_to_2d
-                cam_data = None
-            cam = cam.squeeze(0)
-            batch_3d = batch_3d.squeeze(0)
-            batch_2d = batch_2d.squeeze(0)
-            if cam is not None:
-                cam = cam.float()
-            inputs_3d = batch_3d.float()
-            inputs_2d = batch_2d.float()
-            # inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
-            # inputs_3d = torch.from_numpy(batch.astype('float32'))
-            # cam = torch.from_numpy(cam.astype('float32'))
+                    cam_data = None
+                cam = cam.squeeze(0)
+                batch_3d = batch_3d.squeeze(0)
+                batch_2d = batch_2d.squeeze(0)
+                if cam is not None:
+                    cam = cam.float()
+                inputs_3d = batch_3d.float()
+                inputs_2d = batch_2d.float()
 
-            ##### apply test-time-augmentation (following Videopose3d)
-            inputs_2d_flip = inputs_2d.clone()
-            
-            inputs_2d_flip[..., 0] *= -1
-            inputs_2d_flip[..., kps_left + kps_right, :] = inputs_2d_flip[..., kps_right + kps_left,:]
+                # inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
+                # inputs_3d = torch.from_numpy(batch.astype('float32'))
+                # cam = torch.from_numpy(cam.astype('float32'))
 
-            ##### convert size
-            inputs_3d_p = inputs_3d
-            inputs_2d, inputs_3d = eval_data_prepare(cfg['DATASET']['number_of_frames'], inputs_2d, inputs_3d_p)
-            inputs_2d_flip, _ = eval_data_prepare(cfg['DATASET']['number_of_frames'], inputs_2d_flip, inputs_3d_p)
-            
-            if torch.cuda.is_available():
-                inputs_2d = inputs_2d.cuda()
-                inputs_2d_flip = inputs_2d_flip.cuda()
-                inputs_3d = inputs_3d.cuda()
-                cam = cam.cuda()
-
-            inputs_traj = inputs_3d[..., root_idx:root_idx+1, :].clone()
-            inputs_3d[..., root_idx, :] = 0
-            bs = cfg['DATASET']['batch_size']
-            total_batch = (inputs_3d.shape[0] + bs - 1) // bs
-
-            for batch_cnt in range(total_batch):
-                if (batch_cnt + 1) * bs > inputs_3d.shape[0]:
-                    inputs_2d_single = inputs_2d[batch_cnt * bs:]
-                    inputs_2d_flip_single = inputs_2d_flip[batch_cnt * bs:]
-                    inputs_3d_single = inputs_3d[batch_cnt * bs:]
-                    inputs_traj_single = inputs_traj[batch_cnt * bs:]
-                else:
-                    inputs_2d_single = inputs_2d[batch_cnt * bs:(batch_cnt+1) * bs]
-                    inputs_2d_flip_single = inputs_2d_flip[batch_cnt * bs:(batch_cnt+1) * bs]
-                    inputs_3d_single = inputs_3d[batch_cnt * bs:(batch_cnt+1) * bs]
-                    inputs_traj_single = inputs_traj[batch_cnt * bs:(batch_cnt + 1) * bs]
-
+                ##### apply test-time-augmentation (following Videopose3d)
+                inputs_2d_flip = inputs_2d.clone()
                 
-                predicted_3d_pos_single = model_eval(inputs_2d=inputs_2d_single, inputs_3d=inputs_3d_single, input_2d_flip=inputs_2d_flip_single, istrain=False) #b, t, h, f, j, c
-                predicted_3d_pos_single[..., root_idx, :] = 0
+                inputs_2d_flip[..., 0] *= -1
+                inputs_2d_flip[..., kps_left + kps_right, :] = inputs_2d_flip[..., kps_right + kps_left,:]
 
-                if model_name in ['DDHPose','D3DP']:
-                    report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
-                elif model_name == 'MixSTE':
-                    report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict)
-
+                ##### convert size
+                inputs_3d_p = inputs_3d
+                inputs_2d, inputs_3d = eval_data_prepare(cfg['DATASET']['number_of_frames'], inputs_2d, inputs_3d_p)
+                inputs_2d_flip, _ = eval_data_prepare(cfg['DATASET']['number_of_frames'], inputs_2d_flip, inputs_3d_p)
                 
-                N += inputs_3d_single.shape[0] * inputs_3d_single.shape[1]
+                if torch.cuda.is_available():
+                    inputs_2d = inputs_2d.cuda()
+                    inputs_2d_flip = inputs_2d_flip.cuda()
+                    inputs_3d = inputs_3d.cuda()
+                    cam = cam.cuda()
 
+                inputs_traj = inputs_3d[..., root_idx:root_idx+1, :].clone()
+                inputs_3d[..., root_idx, :] = 0
+                bs = cfg['DATASET']['batch_size']
+                total_batch = (inputs_3d.shape[0] + bs - 1) // bs
+
+                for batch_cnt in range(total_batch):
+                    if (batch_cnt + 1) * bs > inputs_3d.shape[0]:
+                        inputs_2d_single = inputs_2d[batch_cnt * bs:]
+                        inputs_2d_flip_single = inputs_2d_flip[batch_cnt * bs:]
+                        inputs_3d_single = inputs_3d[batch_cnt * bs:]
+                        inputs_traj_single = inputs_traj[batch_cnt * bs:]
+                    else:
+                        inputs_2d_single = inputs_2d[batch_cnt * bs:(batch_cnt+1) * bs]
+                        inputs_2d_flip_single = inputs_2d_flip[batch_cnt * bs:(batch_cnt+1) * bs]
+                        inputs_3d_single = inputs_3d[batch_cnt * bs:(batch_cnt+1) * bs]
+                        inputs_traj_single = inputs_traj[batch_cnt * bs:(batch_cnt + 1) * bs]
+
+                    
+                    predicted_3d_pos_single = model_eval(inputs_2d=inputs_2d_single, inputs_3d=inputs_3d_single, input_2d_flip=inputs_2d_flip_single, istrain=False) #b, t, h, f, j, c
+                    predicted_3d_pos_single[..., root_idx, :] = 0
+
+                    if model_name in ['DDHPose','D3DP']:
+                        report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
+                    elif model_name == 'MixSTE':
+                        report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict)
+
+                    
+                    N += inputs_3d_single.shape[0] * inputs_3d_single.shape[1]
+
+                    if quickdebug:
+                        if N == inputs_3d_single.shape[0] * inputs_3d_single.shape[1]:
+                            break
                 if quickdebug:
                     if N == inputs_3d_single.shape[0] * inputs_3d_single.shape[1]:
                         break
-            if quickdebug:
-                if N == inputs_3d_single.shape[0] * inputs_3d_single.shape[1]:
-                    break
-    
+        else:
+            for i, temp in enumerate(data_loader):
+                targets_3d, inputs_2d = temp[0], temp[1]
+
+                # Measure data loading time
+                data_time.update(time.time() - end)
+                num_poses = targets_3d.size(0)
+                inputs_2d = inputs_2d.to(device)
+
+                with torch.no_grad():
+                    if flipaug:  # flip the 2D pose Left <-> Right
+                        joints_left = [4, 5, 6, 10, 11, 12]
+                        joints_right = [1, 2, 3, 13, 14, 15]
+                        out_left = [4, 5, 6, 10, 11, 12]
+                        out_right = [1, 2, 3, 13, 14, 15]
+
+                        inputs_2d_flip = inputs_2d.detach().clone()
+                        inputs_2d_flip[:, :, 0] *= -1
+                        inputs_2d_flip[:, joints_left + joints_right, :] = inputs_2d_flip[:, joints_right + joints_left, :]
+                        outputs_3d_flip = model_pos_eval(inputs_2d_flip.view(num_poses, -1)).view(num_poses, -1, 3).cpu()
+                        outputs_3d_flip[:, :, 0] *= -1
+                        outputs_3d_flip[:, out_left + out_right, :] = outputs_3d_flip[:, out_right + out_left, :]
+
+                        outputs_3d = model_pos_eval(inputs_2d.view(num_poses, -1)).view(num_poses, -1, 3).cpu()
+                        outputs_3d = (outputs_3d + outputs_3d_flip) / 2.0
+
+                    else:
+                        outputs_3d = model_pos_eval(inputs_2d.view(num_poses, -1)).view(num_poses, -1, 3).cpu()
+
+
     if is_main_process():
         if action is None:
             logger.info("----------")

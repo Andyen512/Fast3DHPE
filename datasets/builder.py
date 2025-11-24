@@ -7,7 +7,7 @@ from torch.utils.data import Dataset, DataLoader, DistributedSampler
 # ===== 你项目里的真实路径：按需修改 =====
 from .camera import world_to_camera, normalize_screen_coordinates
 from .h36m_dataset import Human36mDataset   
-from .threedhp_dataset import ThreeDHPDataset
+from .threedhp_dataset import *
 # =======================================
 from remote_pdb import set_trace
 from .utils import *
@@ -33,7 +33,7 @@ class Bundle:
 
 # ---------------- 基础加载（来自你旧 main） ----------------
 def _load_dataset(cfg) -> object:
-    name = cfg["DATASET"]["name"].lower()
+    name = cfg["DATASET"]["train_dataset"].lower()
     root = cfg["DATASET"].get("root", "data")
     
     if name == "h36m" or name == "human3.6m":
@@ -55,8 +55,8 @@ def _load_dataset(cfg) -> object:
         data_train = dataset.data_train
         data_test = dataset.data_test
         joints_left, kps_right = dataset.joints_left, dataset.joints_right
-
-        return data_train, data_test, joints_left, kps_right
+        # return data_train, data_test, joints_left, kps_right
+        return dataset
     else:
         raise KeyError(f"Unsupported DATASET.name: {name}")
 
@@ -109,21 +109,22 @@ def _load_keypoints_3DHP(data_train, data_test):
     return out_poses_3d_train, out_poses_2d_train, out_poses_3d_test, out_poses_2d_test
 
 def _load_keypoints_2d(cfg, dataset) -> Tuple[dict, dict, List[int], List[int], List[int], List[int]]:
-    name = cfg["DATASET"]["name"].lower()
+    name = cfg["DATASET"]["train_dataset"].lower()
     root = cfg["DATASET"].get("root", "data")
     kp_tag = cfg["DATASET"].get("keypoints", "cpn_ft_h36m_dbb")
     if not cfg["DATASET"]["Cross_Dataset"]:
         path_2d = os.path.join(root, f"data_2d_{name}_{kp_tag}.npz")
+        keypoints = np.load(path_2d, allow_pickle=True)
         meta      = keypoints["metadata"].item()
         sym       = meta["keypoints_symmetry"]
         kps_left, kps_right = list(sym[0]), list(sym[1])
         joints_left, joints_right = list(dataset.skeleton().joints_left()), list(dataset.skeleton().joints_right())
     else:
         path_2d = os.path.join(root, "h36m_16joints" , f"data_2d_{name}_{kp_tag}.npz")
+        keypoints = np.load(path_2d, allow_pickle=True)
         joints_left, joints_right = list(dataset.skeleton().joints_left()), list(dataset.skeleton().joints_right())
         kps_left, kps_right = joints_left, joints_right
 
-    keypoints = np.load(path_2d, allow_pickle=True)
     keypoints_2d = keypoints["positions_2d"].item()
 
     return keypoints_2d, kps_left, kps_right, joints_left, joints_right
@@ -330,7 +331,8 @@ def build_data_bundle_test_3DHP(cfg, kps_left, kps_right, joints_left, joints_ri
     return test_bundle_list
 
 def build_data_bundle(cfg, training: bool = True) -> Bundle:
-    name = cfg["DATASET"]["name"]
+    train_dataset = cfg["DATASET"]["train_dataset"]
+    test_dataset = cfg["DATASET"]["test_dataset"]
     # 拉平成序列列表
     ds_cfg = cfg["DATASET"]
     subset       = float(ds_cfg.get("subset", 1.0))
@@ -345,8 +347,8 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
     stride = ds_cfg["stride"]
     causal_shift = 0
 
-    chunk_cls_name = f"PoseChunkDataset_{name}"
-    unchunk_cls_name = f"PoseUnchunkedDataset_{name}"
+    chunk_cls_name = f"PoseChunkDataset_{train_dataset}"
+    unchunk_cls_name = f"PoseUnchunkedDataset_{train_dataset}"
     try:
         ChunkDataset = eval(chunk_cls_name)
         UnchunkDataset = eval(unchunk_cls_name)
@@ -354,30 +356,30 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
         raise ValueError(f"找不到对应的数据集类: {e}")
     
     # 读取 + 预处理
-    if name == "H36M":
+    if training:
         dataset = _load_dataset(cfg)
-        keypoints_2d, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
+        if train_dataset == "H36M":
+            keypoints_2d, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
 
-        # 对齐长度 & 归一化
-        if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):
-            _align_kp_and_mocap_lengths(dataset, keypoints_2d)
-        _normalize_keypoints(dataset, keypoints_2d)
+            # 对齐长度 & 归一化
+            if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):
+                _align_kp_and_mocap_lengths(dataset, keypoints_2d)
+            _normalize_keypoints(dataset, keypoints_2d)
 
-        # 划分 subject
-        subjects_train, subjects_semi, subjects_test = _build_splits(cfg)  
+            # 划分 subject
+            subjects_train, subjects_semi, subjects_test = _build_splits(cfg)  
 
-        if training:
             cameras_train, poses_train, poses_train_2d = fetch(dataset, keypoints_2d, subjects_train, subset=subset, downsample=downsample)
             cameras_valid, poses_valid, poses_valid_2d = fetch(dataset, keypoints_2d, subjects_test,  subset=1.0, downsample=downsample)
 
-    elif name == "3DHP":
-        data_train, data_test, kps_left, kps_right = _load_dataset(cfg)
-        joints_left, joints_right = kps_left, kps_right
-        poses_train, poses_train_2d, poses_valid, poses_valid_2d   = _load_keypoints_3DHP(data_train, data_test)
-        cameras_train, cameras_valid = None, None
-        
+        elif train_dataset == "3DHP":
+            # data_train, data_test, kps_left, kps_right = _load_dataset(cfg)
+            data_train, data_test, kps_left, kps_right = dataset.data_train, dataset.data_test, dataset.kps_left, dataset.kps_right
+            joints_left, joints_right = kps_left, kps_right
+            poses_train, poses_train_2d, poses_valid, poses_valid_2d   = _load_keypoints_3DHP(data_train, data_test)
+            cameras_train, cameras_valid = None, None
 
-    if training:
+    
         train_dataset = ChunkDataset(poses_train_2d, poses_train, cameras_train,
                                 chunk_length=ds_cfg["number_of_frames"],
                                 pad= (receptive_field -1) // 2, 
@@ -387,7 +389,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
                                 joints_left=joints_left, joints_right=joints_right)
         sampler = DistributedSampler(train_dataset, num_replicas=torch.distributed.get_world_size(), rank=dist.get_rank(), shuffle=True)
         train_loader = DataLoader(train_dataset, batch_size=batch_size//stride, sampler=sampler, num_workers=4, pin_memory=True)
-       
+    
         # 验证集简单用测试 subject 的较稀疏滑窗
         val_dataset = UnchunkDataset(poses_valid_2d, poses_valid, cameras_valid,
                 pad=(receptive_field -1) // 2, 
@@ -417,15 +419,53 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
             bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # 可在 cfg 里定义
         )
     else:
-        build_data_bundle_test = eval(f"build_data_bundle_test_{name}")
-        if name == "H36M":
-            all_actions, action_filter = get_all_actions_by_subject(cfg, dataset, subjects_test)
-            bundle_list = build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, dataset, keypoints_2d, \
-                                                 all_actions, action_filter, PoseUnchunkedDataset=UnchunkDataset)
-        elif name == "3DHP":
-            all_actions, action_filter = {}, None
-            bundle_list = build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, poses_valid, poses_valid_2d, \
-                                                 all_actions, action_filter, PoseUnchunkedDataset=UnchunkDataset)
+        if train_dataset == test_dataset:
+            dataset = _load_dataset(cfg)
+            keypoints_2d, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
 
-        return bundle_list
+            # 对齐长度 & 归一化
+            if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):
+                _align_kp_and_mocap_lengths(dataset, keypoints_2d)
+            _normalize_keypoints(dataset, keypoints_2d)
 
+            # 划分 subject
+            subjects_train, subjects_semi, subjects_test = _build_splits(cfg)  
+            
+            build_data_bundle_test = eval(f"build_data_bundle_test_{test_dataset}")
+            if test_dataset == "H36M":
+                all_actions, action_filter = get_all_actions_by_subject(cfg, dataset, subjects_test)
+                bundle_list = build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, dataset, keypoints_2d, \
+                                                    all_actions, action_filter, PoseUnchunkedDataset=UnchunkDataset)
+            elif test_dataset == "3DHP":
+                all_actions, action_filter = {}, None
+                bundle_list = build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, poses_valid, poses_valid_2d, \
+                                                    all_actions, action_filter, PoseUnchunkedDataset=UnchunkDataset)
+            return bundle_list
+
+        else:
+            ############################################
+            # prepare cross dataset validation
+            ############################################
+            test_bundle_list = []
+            if test_dataset == '3DHP':
+                mpi3d_npz = np.load('data/test_set/test_{:}.npz'.format(test_dataset.lower()))  
+                tmp = mpi3d_npz
+                dataset = PoseBuffer([tmp['pose3d']], [tmp['pose2d']])
+                mpi3d_loader = DataLoader(dataset,
+                                        batch_size=batch_size,
+                                        shuffle=False, num_workers=4, pin_memory=True)         
+
+
+            test_bundle_list.append(
+                Bundle(
+                    test_loader=mpi3d_loader,
+                    dataset=dataset,
+                    # keypoints_2d=keypoints,
+                    kps_left=kps_left, kps_right=kps_right,
+                    joints_left=joints_left, joints_right=joints_right,
+                    # action_key=action_key,
+                    # action_filter=action_filter,
+                    bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # 可在 cfg 里定义
+                )
+            )
+            return test_bundle_list

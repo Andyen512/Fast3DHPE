@@ -241,7 +241,7 @@ class Trainer:
                     if is_main_process():
                         self.logger.info(
                             "[%d] time %.2f lr %.6f 3d_train %.3f 3d_pos_train %.3f 3d_pos_valid %.3f" % (
-                                epoch + 1,
+                                epoch,
                                 elapsed,
                                 self.optimizer.param_groups[0]['lr'],
                                 losses_3d_train[-1] * 1000,

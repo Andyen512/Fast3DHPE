@@ -14,7 +14,8 @@ DATASET:
   batch_size: 768
   stride: 243
   Root_idx: 0
-
+  Cross_Dataset: False
+  
   Test:
     actions: '*'   
     P2: True         
