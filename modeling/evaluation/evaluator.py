@@ -5,7 +5,6 @@ from .eval_utils import *
 import os
 from modeling.dist import is_main_process
 
-
 def eval_data_prepare(receptive_field, inputs_2d, inputs_3d):
 
     assert inputs_2d.shape[:-1] == inputs_3d.shape[:-1], "2d and 3d inputs shape must be same! "+str(inputs_2d.shape)+str(inputs_3d.shape)
@@ -218,6 +217,8 @@ def evaluate( cfg,
                     if N == inputs_3d_single.shape[0] * inputs_3d_single.shape[1]:
                         break
         else:
+            sum_p1, sum_p2, sum_pck, sum_auc = 0.0, 0.0, 0.0, 0.0
+            total_poses = 0
             for i, temp in enumerate(test_loader):
                 inputs_3d, inputs_2d = temp[0], temp[1]
             
@@ -235,12 +236,31 @@ def evaluate( cfg,
 
                 with torch.no_grad():                    
                     inputs_2d_flip[:, :, joints_left + joints_right, :] = inputs_2d_flip[:, :, joints_right + joints_left, :]
-                    predicted_3d_pos_single = model_eval(inputs_2d=inputs_2d, inputs_3d=inputs_3d_p, input_2d_flip=inputs_2d_flip, istrain=False) #b, t, h, f, j, c
+                    predicted_3d_pos_single = model_eval(inputs_2d=inputs_2d, inputs_3d=inputs_3d, input_2d_flip=inputs_2d_flip, istrain=False) #b, t, h, f, j, c
+                    predicted_3d_pos_single[..., root_idx:root_idx+1, :] = 0
+                    inputs_3d[..., root_idx:root_idx+1, :] = 0
 
                     if model_name in ['DDHPose','D3DP']:
-                        report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
+                        report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
                     elif model_name == 'MixSTE':
                         report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d, p1_dict)
+                        B, F, J, C = predicted_3d_pos_single.shape
+                        num_poses = B * F
+                        outputs_flat = predicted_3d_pos_single.contiguous().view(num_poses, J, C).cpu()
+                        targets_flat = inputs_3d.contiguous().view(num_poses, J, C).cpu()
+                        # PCK / AUC
+                        pck = compute_PCK(targets_flat.numpy(), outputs_flat.numpy())
+                        auc = compute_AUC(targets_flat.numpy(), outputs_flat.numpy())
+
+                        # 累积
+                        sum_pck += pck      * num_poses
+                        sum_auc += auc      * num_poses
+                        total_poses += num_poses
+                        N += inputs_3d.shape[0] * inputs_3d.shape[1]
+            epoch_pck = sum_pck / total_poses
+            epoch_auc = sum_auc / total_poses
+            print('MixSTE Eval 3DHP: '
+                'PCK: {:.2f} | AUC: {:.4f}'.format(epoch_pck, epoch_auc))
 
     if is_main_process():
         if action is None:
@@ -285,6 +305,7 @@ def evaluate( cfg,
         e2 = (p1_dict['epoch_loss_3d_pos_procrustes'] / N)*1000
         e3 = (p1_dict['epoch_loss_3d_pos_scale'] / N)*1000
         ev = (p1_dict['epoch_loss_3d_vel'] / N)*1000
+
         if is_main_process():
             logger.info("Protocol #1 Error (MPJPE):   %.4f mm", e1)
             logger.info("Protocol #2 Error (P-MPJPE): %.4f mm", e2)

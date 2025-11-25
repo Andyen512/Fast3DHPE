@@ -542,3 +542,36 @@ def mean_velocity_error(predicted, target, axis=0):
     velocity_target = np.diff(target, axis=axis)
     
     return np.mean(np.linalg.norm(velocity_predicted - velocity_target, axis=len(target.shape)-1))
+
+def compute_PCK(gts, preds, scales=1000, eval_joints=None, threshold=150):
+    PCK_THRESHOLD = threshold
+    sample_num = len(gts)
+    total = 0
+    true_positive = 0
+    if eval_joints is None:
+        eval_joints = list(range(gts.shape[1]))
+
+    for n in range(sample_num):
+        gt = gts[n]
+        pred = preds[n]
+        # scale = scales[n]
+        scale = 1000
+        per_joint_error = np.take(np.sqrt(np.sum(np.power(pred - gt, 2), 1)) * scale, eval_joints, axis=0)
+        true_positive += (per_joint_error < PCK_THRESHOLD).sum()
+        total += per_joint_error.size
+
+    pck = float(true_positive / total) * 100
+    return pck
+
+
+def compute_AUC(gts, preds, scales=1000, eval_joints=None):
+    # This range of thresholds mimics 'mpii_compute_3d_pck.m', which is provided as part of the
+    # MPI-INF-3DHP test data release.
+    thresholds = np.linspace(0, 150, 31)
+    pck_list = []
+    for threshold in thresholds:
+        pck_list.append(compute_PCK(gts, preds, scales, eval_joints, threshold))
+
+    auc = np.mean(pck_list)
+
+    return auc

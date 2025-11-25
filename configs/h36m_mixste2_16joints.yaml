@@ -14,7 +14,7 @@ DATASET:
   number_of_frames: 243
   batch_size: 768
   stride: 243
-  Root_idx: 0
+  Root_idx: 14
   Cross_Dataset: True
   test_dataset: 3DHP
 
