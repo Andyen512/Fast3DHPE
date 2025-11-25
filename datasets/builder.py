@@ -454,7 +454,8 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
                 mpi3d_loader = DataLoader(dataset,
                                         batch_size=batch_size,
                                         shuffle=False, num_workers=4, pin_memory=True)         
-
+            kps_left, kps_right = dataset.kps_left, dataset.kps_right
+            joints_left, joints_right = dataset.joints_left, dataset.joints_right
 
             test_bundle_list.append(
                 Bundle(

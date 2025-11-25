@@ -82,7 +82,7 @@ def report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, 
 # ---------- MIXSTE 输出与返回 ----------
 def report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict):
     error = mpjpe(predicted_3d_pos_single, inputs_3d_single)
-
+    
     p1_dict['epoch_loss_3d_pos_scale'] += (predicted_3d_pos_single.shape[0] * inputs_3d_single.shape[1] * n_mpjpe(predicted_3d_pos_single, inputs_3d_single))
     p1_dict['epoch_loss_3d_pos'] += (inputs_3d_single.shape[0] * inputs_3d_single.shape[1] * error)
 
@@ -218,34 +218,29 @@ def evaluate( cfg,
                     if N == inputs_3d_single.shape[0] * inputs_3d_single.shape[1]:
                         break
         else:
-            for i, temp in enumerate(data_loader):
-                targets_3d, inputs_2d = temp[0], temp[1]
+            for i, temp in enumerate(test_loader):
+                inputs_3d, inputs_2d = temp[0], temp[1]
+            
+                ##### convert size
+                inputs_3d_p = inputs_3d
+                inputs_2d_flip = inputs_2d.clone()
+                inputs_2d_flip[:, :, 0] *= -1
+                inputs_2d, inputs_3d = eval_data_prepare(cfg['DATASET']['number_of_frames'], inputs_2d, inputs_3d_p)
+                inputs_2d_flip, _ = eval_data_prepare(cfg['DATASET']['number_of_frames'], inputs_2d_flip, inputs_3d_p)
 
-                # Measure data loading time
-                data_time.update(time.time() - end)
-                num_poses = targets_3d.size(0)
-                inputs_2d = inputs_2d.to(device)
+                if torch.cuda.is_available():
+                    inputs_2d = inputs_2d.cuda()
+                    inputs_2d_flip = inputs_2d_flip.cuda()
+                    inputs_3d = inputs_3d.cuda()
 
-                with torch.no_grad():
-                    if flipaug:  # flip the 2D pose Left <-> Right
-                        joints_left = [4, 5, 6, 10, 11, 12]
-                        joints_right = [1, 2, 3, 13, 14, 15]
-                        out_left = [4, 5, 6, 10, 11, 12]
-                        out_right = [1, 2, 3, 13, 14, 15]
+                with torch.no_grad():                    
+                    inputs_2d_flip[:, :, joints_left + joints_right, :] = inputs_2d_flip[:, :, joints_right + joints_left, :]
+                    predicted_3d_pos_single = model_eval(inputs_2d=inputs_2d, inputs_3d=inputs_3d_p, input_2d_flip=inputs_2d_flip, istrain=False) #b, t, h, f, j, c
 
-                        inputs_2d_flip = inputs_2d.detach().clone()
-                        inputs_2d_flip[:, :, 0] *= -1
-                        inputs_2d_flip[:, joints_left + joints_right, :] = inputs_2d_flip[:, joints_right + joints_left, :]
-                        outputs_3d_flip = model_pos_eval(inputs_2d_flip.view(num_poses, -1)).view(num_poses, -1, 3).cpu()
-                        outputs_3d_flip[:, :, 0] *= -1
-                        outputs_3d_flip[:, out_left + out_right, :] = outputs_3d_flip[:, out_right + out_left, :]
-
-                        outputs_3d = model_pos_eval(inputs_2d.view(num_poses, -1)).view(num_poses, -1, 3).cpu()
-                        outputs_3d = (outputs_3d + outputs_3d_flip) / 2.0
-
-                    else:
-                        outputs_3d = model_pos_eval(inputs_2d.view(num_poses, -1)).view(num_poses, -1, 3).cpu()
-
+                    if model_name in ['DDHPose','D3DP']:
+                        report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
+                    elif model_name == 'MixSTE':
+                        report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d, p1_dict)
 
     if is_main_process():
         if action is None:

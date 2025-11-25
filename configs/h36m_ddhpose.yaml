@@ -65,7 +65,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_ddhpose2_lr00025_lrd990_2"    # 保存路径的一部分
+  save_name: "h36m_ddhpose2_lr00025_lrd990_2_torch28"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: false
   log_interval: 50
