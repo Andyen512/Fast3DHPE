@@ -1,20 +1,52 @@
-import math
-import random
-from typing import List
-from collections import namedtuple
-from einops import rearrange, repeat
-
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from torch import nn
-from remote_pdb import set_trace
+from einops import rearrange, repeat
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 from functools import partial
+import clip
+from collections import namedtuple
+import math
+from remote_pdb import set_trace
 
-__all__ = ["D3DP"]
+__all__ = ["FinePOSE"]
 
 ModelPrediction = namedtuple('ModelPrediction', ['pred_noise', 'pred_x_start'])
+def encode_text1(text):
+    with torch.no_grad():
+        text = clip.tokenize(text, truncate=True).cuda()
+        return text
+    
+pre_text_information = [
+    "A person",
+    "speed",
+    "head",
+    "body",
+    "arm",
+    "leg",
+]
 
+pre_text_tensor = []
+for i in pre_text_information:
+    tmp_text = encode_text1(i)
+    pre_text_tensor.append(tmp_text)
+
+pre_text_tensor = torch.cat(pre_text_tensor, dim=0)
+
+def set_requires_grad(nets, requires_grad=False):
+    """Set requies_grad for all the networks.
+
+    Args:
+        nets (nn.Module | list[nn.Module]): A list of networks or a single
+            network.
+        requires_grad (bool): Whether the networks require gradients or not
+    """
+    if not isinstance(nets, list):
+        nets = [nets]
+    for net in nets:
+        if net is not None:
+            for param in net.parameters():
+                param.requires_grad = requires_grad
 
 def exists(x):
     return x is not None
@@ -161,7 +193,81 @@ class Block(nn.Module):
             x = rearrange(x, 'b c t -> b t c')
         return x
 
-class  D3DP_MixSTE(nn.Module):
+def zero_module(module):
+    """
+    Zero out the parameters of a module and return it.
+    """
+    for p in module.parameters():
+        p.detach().zero_()
+    return module
+
+class StylizationBlock(nn.Module):
+
+    def __init__(self, latent_dim, time_embed_dim, dropout):
+        super().__init__()
+        self.emb_layers = nn.Sequential(
+            nn.SiLU(),
+            nn.Linear(time_embed_dim, 2 * latent_dim),
+        )
+        self.norm = nn.LayerNorm(latent_dim)
+        self.out_layers = nn.Sequential(
+            nn.SiLU(),
+            nn.Dropout(p=dropout),
+            zero_module(nn.Linear(latent_dim, latent_dim)),
+        )
+
+    def forward(self, h, emb):
+        """
+        h: B, T, D
+        emb: B, D
+        """
+        B, T, D = h.shape
+        emb = emb.view(B, T, D)
+        # B, 1, 2D
+        emb_out = self.emb_layers(emb)[:,0:1,:]
+        # scale: B, 1, D / shift: B, 1, D
+        scale, shift = torch.chunk(emb_out, 2, dim=2)
+        h = self.norm(h) * (1 + scale) + shift
+        h = self.out_layers(h)
+        return h
+
+class TemporalCrossAttention(nn.Module):
+
+    def __init__(self, latent_dim, text_latent_dim, num_head, dropout, time_embed_dim):
+        super().__init__()
+        self.num_head = num_head
+        self.norm = nn.LayerNorm(latent_dim)
+        self.text_norm = nn.LayerNorm(text_latent_dim)
+        self.query = nn.Linear(latent_dim, latent_dim)
+        self.key = nn.Linear(text_latent_dim, latent_dim)
+        self.value = nn.Linear(text_latent_dim, latent_dim)
+        self.dropout = nn.Dropout(dropout)
+        self.proj_out = StylizationBlock(latent_dim, time_embed_dim, dropout)
+    
+    def forward(self, x, xf, emb):
+        """
+        x: B, T, D
+        xf: B, N, L
+        """
+        B, T, D = x.shape
+        N = xf.shape[1]
+        H = self.num_head
+        query = self.query(self.norm(x)).unsqueeze(2)
+        key = self.key(self.text_norm(xf)).unsqueeze(1)
+        key = key.repeat(int(B/key.shape[0]), 1, 1, 1)
+        query = query.view(B, T, H, -1)
+        key = key.view(B, N, H, -1)
+
+        attention = torch.einsum('bnhd,bmhd->bnmh', query, key) / math.sqrt(D // H)
+        weight = self.dropout(F.softmax(attention, dim=2))
+        value = self.value(self.text_norm(xf)).unsqueeze(1)
+        value = value.repeat(int(B/value.shape[0]), 1, 1, 1)
+        value = value.view(B, N, H, -1)
+        y = torch.einsum('bnmh,bmhd->bnhd', weight, value).reshape(B, T, D)
+        y = x + self.proj_out(y, emb)
+        return y
+
+class  FinePOSE_MixSTE(nn.Module):
     def __init__(self, num_frame=9, num_joints=17, in_chans=2, embed_dim_ratio=32, depth=4,
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None, is_train=True):
@@ -232,28 +338,81 @@ class  D3DP_MixSTE(nn.Module):
             nn.Linear(embed_dim , out_dim),
         )
 
+        self.temporal_cross_attn = TemporalCrossAttention(512, 512, num_heads, drop_rate, 512)
+        self.text_pre_proj = nn.Identity()
+        textTransEncoderLayer = nn.TransformerEncoderLayer(
+            d_model=512,
+            nhead=num_heads,
+            dim_feedforward=2048,
+            dropout=drop_rate,
+            activation="gelu")
+        self.textTransEncoder = nn.TransformerEncoder(
+            textTransEncoderLayer,
+            num_layers=4)
+        self.text_ln = nn.LayerNorm(512)
+        self.text_proj = nn.Sequential(
+            nn.Linear(512, 512)
+        )
 
-    def STE_forward(self, x_2d, x_3d, t):
+        self.clip_text, _ = clip.load('ViT-B/32', "cpu")
+        set_requires_grad(self.clip_text, False)
+
+        self.remain_len = 4
+
+
+        ctx_vectors_subject = torch.empty((7-self.remain_len), 512, dtype=self.clip_text.dtype)
+        nn.init.normal_(ctx_vectors_subject, std=0.02)
+        self.ctx_subject = nn.Parameter(ctx_vectors_subject)
+
+        ctx_vectors_verb = torch.empty((12-self.remain_len), 512, dtype=self.clip_text.dtype)
+        nn.init.normal_(ctx_vectors_verb, std=0.02)
+        self.ctx_verb = nn.Parameter(ctx_vectors_verb)
+
+        ctx_vectors_speed = torch.empty((10-self.remain_len), 512, dtype=self.clip_text.dtype)
+        nn.init.normal_(ctx_vectors_speed, std=0.02)
+        self.ctx_speed = nn.Parameter(ctx_vectors_speed)
+
+        ctx_vectors_head = torch.empty((10-self.remain_len), 512, dtype=self.clip_text.dtype)
+        nn.init.normal_(ctx_vectors_head, std=0.02)
+        self.ctx_head = nn.Parameter(ctx_vectors_head)
+        
+        ctx_vectors_body = torch.empty((10-self.remain_len), 512, dtype=self.clip_text.dtype)
+        nn.init.normal_(ctx_vectors_body, std=0.02)
+        self.ctx_body = nn.Parameter(ctx_vectors_body)
+        
+        ctx_vectors_arm = torch.empty((14-self.remain_len), 512, dtype=self.clip_text.dtype)
+        nn.init.normal_(ctx_vectors_arm, std=0.02)
+        self.ctx_arm = nn.Parameter(ctx_vectors_arm)
+
+        ctx_vectors_leg = torch.empty((14-self.remain_len), 512, dtype=self.clip_text.dtype)
+        nn.init.normal_(ctx_vectors_leg, std=0.02)
+        self.ctx_leg = nn.Parameter(ctx_vectors_leg)
+
+    def STE_forward(self, x_2d, x_3d, t, xf_proj):
 
         if self.is_train:
             x = torch.cat((x_2d, x_3d), dim=-1)
-            b, f, n, c = x.shape  ##### b is batch size, f is number of frames, n is number of joints, c is channel size?
+            b, f, n, c = x.shape
             x = rearrange(x, 'b f n c  -> (b f) n c', )
-            ### now x is [batch_size, receptive frames, joint_num, 2 channels]
             x = self.Spatial_patch_to_embedding(x)
-            # x = rearrange(x, 'bnew c n  -> bnew n c', )
             x += self.Spatial_pos_embed
-            time_embed = self.time_mlp(t)[:, None, None, :].repeat(1,f,n,1)
+            time_embed = self.time_mlp(t)[:, None, None, :]
+            xf_proj = xf_proj.view(xf_proj.shape[0], 1, 1, xf_proj.shape[1])
+            time_embed = time_embed + xf_proj
+            time_embed = time_embed.repeat(1, f, n, 1)
             time_embed = rearrange(time_embed, 'b f n c  -> (b f) n c', )
             x += time_embed
         else:
             x_2d = x_2d[:,None].repeat(1,x_3d.shape[1],1,1,1)
             x = torch.cat((x_2d, x_3d), dim=-1)
-            b, h, f, n, c = x.shape  ##### b is batch size, f is number of frames, n is number of joints, c is channel size?
+            b, h, f, n, c = x.shape
             x = rearrange(x, 'b h f n c  -> (b h f) n c', )
             x = self.Spatial_patch_to_embedding(x)
             x += self.Spatial_pos_embed
-            time_embed = self.time_mlp(t)[:, None, None, None, :].repeat(1, h, f, n, 1)
+            time_embed = self.time_mlp(t)[:, None, None, None, :]
+            xf_proj = xf_proj.view(xf_proj.shape[0], 1, 1, 1, xf_proj.shape[1])
+            time_embed = time_embed + xf_proj
+            time_embed = time_embed.repeat(1, h, f, n, 1)
             time_embed = rearrange(time_embed, 'b h f n c  -> (b h f) n c', )
             x += time_embed
 
@@ -261,11 +420,10 @@ class  D3DP_MixSTE(nn.Module):
 
         blk = self.STEblocks[0]
         x = blk(x)
-        # x = blk(x, vis=True)
 
         x = self.Spatial_norm(x)
         x = rearrange(x, '(b f) n cw -> (b n) f cw', f=f)
-        return x
+        return x, time_embed
 
     def TTE_foward(self, x):
         assert len(x.shape) == 3, "shape is equal to 3"
@@ -274,11 +432,10 @@ class  D3DP_MixSTE(nn.Module):
         x = self.pos_drop(x)
         blk = self.TTEblocks[0]
         x = blk(x)
-        # x = blk(x, vis=True)
-        # exit()
 
         x = self.Temporal_norm(x)
         return x
+
 
     def ST_foward(self, x):
         assert len(x.shape)==4, "shape is equal to 4"
@@ -298,16 +455,76 @@ class  D3DP_MixSTE(nn.Module):
         
         return x
 
-    def forward(self, x_2d, x_3d, t, is_train):
-        self.is_train = is_train
+    def encode_text(self, text, pre_text_tensor):
+        with torch.no_grad():
+            x = self.clip_text.token_embedding(text).type(self.clip_text.dtype)
+            pre_text_tensor = self.clip_text.token_embedding(pre_text_tensor).type(self.clip_text.dtype)
+
+        learnable_prompt_subject = self.ctx_subject
+        learnable_prompt_subject = learnable_prompt_subject.view(1, self.ctx_subject.shape[0], self.ctx_subject.shape[1])
+        learnable_prompt_subject = learnable_prompt_subject.repeat(x.shape[0], 1, 1)
+        learnable_prompt_subject = torch.cat((learnable_prompt_subject, pre_text_tensor[:, 0, :self.remain_len, :]), dim=1)
+
+        learnable_prompt_verb = self.ctx_verb
+        learnable_prompt_verb = learnable_prompt_verb.view(1, self.ctx_verb.shape[0], self.ctx_verb.shape[1])
+        learnable_prompt_verb = learnable_prompt_verb.repeat(x.shape[0], 1, 1)
+        learnable_prompt_verb = torch.cat((learnable_prompt_verb, x[:, :self.remain_len, :]), dim=1)
+
+        learnable_prompt_speed = self.ctx_speed
+        learnable_prompt_speed = learnable_prompt_speed.view(1, self.ctx_speed.shape[0], self.ctx_speed.shape[1])
+        learnable_prompt_speed = learnable_prompt_speed.repeat(x.shape[0], 1, 1)
+        learnable_prompt_speed = torch.cat((learnable_prompt_speed, pre_text_tensor[:, 1, :self.remain_len, :]), dim=1)
+
+        learnable_prompt_head = self.ctx_head
+        learnable_prompt_head = learnable_prompt_head.view(1, self.ctx_head.shape[0], self.ctx_head.shape[1])
+        learnable_prompt_head = learnable_prompt_head.repeat(x.shape[0], 1, 1)
+        learnable_prompt_head = torch.cat((learnable_prompt_head, pre_text_tensor[:, 2, :self.remain_len, :]), dim=1)
+
+        learnable_prompt_body = self.ctx_body
+        learnable_prompt_body = learnable_prompt_body.view(1, self.ctx_body.shape[0], self.ctx_body.shape[1])
+        learnable_prompt_body = learnable_prompt_body.repeat(x.shape[0], 1, 1)
+        learnable_prompt_body = torch.cat((learnable_prompt_body, pre_text_tensor[:, 3, :self.remain_len, :]), dim=1)
+
+        learnable_prompt_arm = self.ctx_arm
+        learnable_prompt_arm = learnable_prompt_arm.view(1, self.ctx_arm.shape[0], self.ctx_arm.shape[1])
+        learnable_prompt_arm = learnable_prompt_arm.repeat(x.shape[0], 1, 1)
+        learnable_prompt_arm = torch.cat((learnable_prompt_arm, pre_text_tensor[:, 4, :self.remain_len, :]), dim=1)
+
+        learnable_prompt_leg = self.ctx_leg
+        learnable_prompt_leg = learnable_prompt_leg.view(1, self.ctx_leg.shape[0], self.ctx_leg.shape[1])
+        learnable_prompt_leg = learnable_prompt_leg.repeat(x.shape[0], 1, 1)
+        learnable_prompt_leg = torch.cat((learnable_prompt_leg, pre_text_tensor[:, 5, :self.remain_len, :]), dim=1)
+
+        x = torch.cat((learnable_prompt_subject, learnable_prompt_verb, learnable_prompt_speed, learnable_prompt_head, learnable_prompt_body, learnable_prompt_arm, learnable_prompt_leg), dim=1)
+
+        with torch.no_grad():
+            x = x + self.clip_text.positional_embedding.type(self.clip_text.dtype)
+            x = x.permute(1, 0, 2)  # NLD -> LND
+            x = self.clip_text.transformer(x)
+            x = self.clip_text.ln_final(x).type(self.clip_text.dtype)
+
+        x = self.text_pre_proj(x)
+        xf_out = self.textTransEncoder(x)
+        xf_out = self.text_ln(xf_out)
+        xf_proj = self.text_proj(xf_out[text.argmax(dim=-1), torch.arange(xf_out.shape[1])])
+        # B, T, D
+        xf_out = xf_out.permute(1, 0, 2)
+        return xf_proj, xf_out
+
+    def forward(self, x_2d, x_3d, t, text, pre_text_tensor):
         if self.is_train:
             b, f, n, c = x_2d.shape
         else:
             b, h, f, n, c = x_3d.shape
 
-        x = self.STE_forward(x_2d, x_3d, t)
+        xf_proj, xf_out = self.encode_text(text, pre_text_tensor)
+
+        x, time_embed = self.STE_forward(x_2d, x_3d, t, xf_proj)
+
+        x = self.temporal_cross_attn(x, xf_out, time_embed)
 
         x = self.TTE_foward(x)
+
 
         x = rearrange(x, '(b n) f cw -> b f n cw', n=n)
         x = self.ST_foward(x)
@@ -321,10 +538,9 @@ class  D3DP_MixSTE(nn.Module):
 
         return x
 
-
-class D3DP(nn.Module):
+class  FinePOSE(nn.Module):
     """
-    Implement DDHPose
+    Implement FinePOSE
     """
     def __init__(self, num_frame=234, num_joints=17, in_chans=2, embed_dim_ratio=512, depth=4,
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
@@ -345,24 +561,21 @@ class D3DP(nn.Module):
 
         # build diffusion
         timesteps = timestep
-        self.num_timesteps = int(timesteps)
-        #timesteps_eval = args.timestep_eval
         sampling_timesteps = sampling_timesteps
         self.objective = 'pred_x0'
-
         betas = cosine_beta_schedule(timesteps)
         alphas = 1. - betas
         alphas_cumprod = torch.cumprod(alphas, dim=0)
         alphas_cumprod_prev = F.pad(alphas_cumprod[:-1], (1, 0), value=1.)
-        timesteps, = betas.shape
         self.num_timesteps = int(timesteps)
-        #self.num_timesteps_eval = int(timesteps_eval)
+
 
         self.sampling_timesteps = default(sampling_timesteps, timesteps)
         assert self.sampling_timesteps <= timesteps
         self.is_ddim_sampling = self.sampling_timesteps < timesteps
         self.ddim_sampling_eta = 1.
         self.self_condition = False
+        self.scale = scale
         self.box_renewal = True
         self.use_ensemble = True
 
@@ -371,7 +584,6 @@ class D3DP(nn.Module):
         self.register_buffer('alphas_cumprod_prev', alphas_cumprod_prev)
 
         # calculations for diffusion q(x_t | x_{t-1}) and others
-
         self.register_buffer('sqrt_alphas_cumprod', torch.sqrt(alphas_cumprod))
         self.register_buffer('sqrt_one_minus_alphas_cumprod', torch.sqrt(1. - alphas_cumprod))
         self.register_buffer('log_one_minus_alphas_cumprod', torch.log(1. - alphas_cumprod))
@@ -379,7 +591,6 @@ class D3DP(nn.Module):
         self.register_buffer('sqrt_recipm1_alphas_cumprod', torch.sqrt(1. / alphas_cumprod - 1))
 
         # calculations for posterior q(x_{t-1} | x_t, x_0)
-
         posterior_variance = betas * (1. - alphas_cumprod_prev) / (1. - alphas_cumprod)
 
         # above: equal to 1. / (1. / (1. - alpha_cumprod_tm1) + alpha_t / beta_t)
@@ -391,18 +602,16 @@ class D3DP(nn.Module):
         self.register_buffer('posterior_log_variance_clipped', torch.log(posterior_variance.clamp(min=1e-20)))
         self.register_buffer('posterior_mean_coef1', betas * torch.sqrt(alphas_cumprod_prev) / (1. - alphas_cumprod))
         self.register_buffer('posterior_mean_coef2',
-                            (1. - alphas_cumprod_prev) * torch.sqrt(alphas) / (1. - alphas_cumprod))
+                             (1. - alphas_cumprod_prev) * torch.sqrt(alphas) / (1. - alphas_cumprod))
 
         # Build Dynamic Head.
-        #self.head = DynamicHead(cfg=cfg, roi_input_shape=self.backbone.output_shape())
         drop_path_rate=0
         if is_train:
             drop_path_rate=0.1
 
-        self.pose_estimator = D3DP_MixSTE(num_frame=num_frame, num_joints=num_joints, in_chans=in_chans, embed_dim_ratio=embed_dim_ratio, 
+        self.pose_estimator = FinePOSE_MixSTE(num_frame=num_frame, num_joints=num_joints, in_chans=in_chans, embed_dim_ratio=embed_dim_ratio, 
                                               depth=depth, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale, 
                                               drop_path_rate=drop_path_rate, is_train=is_train)
-
 
     def predict_noise_from_start(self, x_t, t, x0):
         return (
@@ -410,10 +619,10 @@ class D3DP(nn.Module):
                 extract(self.sqrt_recipm1_alphas_cumprod, t, x_t.shape)
         )
 
-    def model_predictions(self, x, inputs_2d, t):
+    def model_predictions(self, x, inputs_2d, t, input_text, pre_text_tensor):
         x_t = torch.clamp(x, min=-1.1 * self.scale, max=1.1*self.scale)
         x_t = x_t / self.scale
-        pred_pose = self.pose_estimator(inputs_2d, x_t, t, self.is_train)
+        pred_pose = self.pose_estimator(inputs_2d, x_t, t, input_text, pre_text_tensor)
 
         x_start = pred_pose
         x_start = x_start * self.scale
@@ -422,15 +631,16 @@ class D3DP(nn.Module):
 
         return ModelPrediction(pred_noise, x_start)
 
-    def model_predictions_fliping(self, x, inputs_2d, inputs_2d_flip, t):
+    def model_predictions_fliping(self, x, inputs_2d, inputs_2d_flip, t, input_text, pre_text_tensor):
         x_t = torch.clamp(x, min=-1.1 * self.scale, max=1.1*self.scale)
         x_t = x_t / self.scale
         x_t_flip = x_t.clone()
         x_t_flip[:, :, :, :, 0] *= -1
         x_t_flip[:, :, :, self.joints_left + self.joints_right] = x_t_flip[:, :, :,
                                                                         self.joints_right + self.joints_left]
-        pred_pose = self.pose_estimator(inputs_2d, x_t, t, self.is_train)
-        pred_pose_flip = self.pose_estimator(inputs_2d_flip, x_t_flip, t, self.is_train)
+
+        pred_pose = self.pose_estimator(inputs_2d, x_t, t, input_text, pre_text_tensor)
+        pred_pose_flip = self.pose_estimator(inputs_2d_flip, x_t_flip, t, input_text, pre_text_tensor)
 
         pred_pose_flip[:, :, :, :, 0] *= -1
         pred_pose_flip[:, :, :, self.joints_left + self.joints_right] = pred_pose_flip[:, :, :,
@@ -446,16 +656,16 @@ class D3DP(nn.Module):
         return ModelPrediction(pred_noise, x_start)
 
     @torch.no_grad()
-    def ddim_sample(self, inputs_2d, inputs_3d, clip_denoised=True, do_postprocess=True):
+    def ddim_sample(self, inputs_2d, inputs_3d, input_text, pre_text_tensor, clip_denoised=True, do_postprocess=True):
         batch = inputs_2d.shape[0]
         shape = (batch, self.num_proposals, self.frames, 17, 3)
         total_timesteps, sampling_timesteps, eta, objective = self.num_timesteps, self.sampling_timesteps, self.ddim_sampling_eta, self.objective
 
-        # [-1, 0, 1, 2, ..., T-1] when sampling_timesteps == total_timesteps
         times = torch.linspace(-1, total_timesteps - 1, steps=sampling_timesteps + 1)
         times = list(reversed(times.int().tolist()))
-        time_pairs = list(zip(times[:-1], times[1:]))  # [(T-1, T-2), (T-2, T-3), ..., (1, 0), (0, -1)]
-
+        time_pairs = list(zip(times[:-1], times[1:]))
+        
+        # original random noise
         img = torch.randn(shape, device=self.device)
 
         ensemble_score, ensemble_label, ensemble_coord = [], [], []
@@ -463,10 +673,9 @@ class D3DP(nn.Module):
         preds_all=[]
         for time, time_next in time_pairs:
             time_cond = torch.full((batch,), time, device=self.device, dtype=torch.long)
-            #self_cond = x_start if self.self_condition else None
 
 
-            preds = self.model_predictions(img, inputs_2d, time_cond)
+            preds = self.model_predictions(img, inputs_2d, time_cond, input_text, pre_text_tensor)
             pred_noise, x_start = preds.pred_noise, preds.pred_x_start
             preds_all.append(x_start)
 
@@ -489,15 +698,14 @@ class D3DP(nn.Module):
         return preds_all
 
     @torch.no_grad()
-    def ddim_sample_flip(self, inputs_2d, inputs_3d, clip_denoised=True, do_postprocess=True, input_2d_flip=None):
+    def ddim_sample_flip(self, inputs_2d, inputs_3d, input_text, pre_text_tensor, clip_denoised=True, do_postprocess=True, input_2d_flip=None):
         batch = inputs_2d.shape[0]
         shape = (batch, self.num_proposals, self.frames, 17, 3)
         total_timesteps, sampling_timesteps, eta, objective = self.num_timesteps, self.sampling_timesteps, self.ddim_sampling_eta, self.objective
 
-        # [-1, 0, 1, 2, ..., T-1] when sampling_timesteps == total_timesteps
         times = torch.linspace(-1, total_timesteps - 1, steps=sampling_timesteps + 1)
         times = list(reversed(times.int().tolist()))
-        time_pairs = list(zip(times[:-1], times[1:]))  # [(T-1, T-2), (T-2, T-3), ..., (1, 0), (0, -1)]
+        time_pairs = list(zip(times[:-1], times[1:]))
 
         img = torch.randn(shape, device='cuda')
 
@@ -505,11 +713,9 @@ class D3DP(nn.Module):
         preds_all = []
         for time, time_next in time_pairs:
             time_cond = torch.full((batch,), time, dtype=torch.long).cuda()
-            # self_cond = x_start if self.self_condition else None
 
-            #print("%d/%d" % (time, total_timesteps))
 
-            preds = self.model_predictions_fliping(img, inputs_2d, input_2d_flip, time_cond)
+            preds = self.model_predictions_fliping(img, inputs_2d, input_2d_flip, time_cond, input_text, pre_text_tensor)
             pred_noise, x_start = preds.pred_noise, preds.pred_x_start
 
             preds_all.append(x_start)
@@ -531,8 +737,7 @@ class D3DP(nn.Module):
                   sigma * noise
 
         return torch.stack(preds_all, dim=1)
-
-
+    
     # forward diffusion
     def q_sample(self, x_start, t, noise=None):
         if noise is None:
@@ -542,15 +747,27 @@ class D3DP(nn.Module):
         sqrt_one_minus_alphas_cumprod_t = extract(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape)
 
         return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
-
+    
     def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False, inputs_act=None):
+        
+        cleaned_act = [s.split(" ")[0] for s in inputs_act]
+        input_text_list = []
+        for act in cleaned_act:
+            tmp_text = encode_text1(act)   # 假设返回的是 [1, D] 之类的 Tensor
+            input_text_list.append(tmp_text)
+
+        input_text = torch.cat(input_text_list, dim=0).to(inputs_2d.device)  # [B, D]
+        pre_text_tensor_cuda = pre_text_tensor.to(inputs_2d.device)
+        pre_text_tensor_train = pre_text_tensor_cuda.unsqueeze(dim=0)
+        pre_text_tensor_train = pre_text_tensor_train.repeat(input_text.shape[0], 1, 1).to(inputs_2d.device)
+
         self.is_train = istrain
         # Prepare Proposals.
         if not self.is_train:
             if self.flip:
-                results = self.ddim_sample_flip(inputs_2d, inputs_3d, input_2d_flip=input_2d_flip)
+                results = self.ddim_sample_flip(inputs_2d, inputs_3d, input_text, pre_text_tensor_train, input_2d_flip=input_2d_flip)
             else:
-                results = self.ddim_sample(inputs_2d, inputs_3d)
+                results = self.ddim_sample(inputs_2d, inputs_3d, input_text, pre_text_tensor_train)
             return results
 
         if self.is_train:
@@ -558,14 +775,14 @@ class D3DP(nn.Module):
             x_poses = x_poses.float()
             t = t.squeeze(-1)
 
-            pred_pose = self.pose_estimator(inputs_2d, x_poses, t, self.is_train)
-
+            # pred_pose = self.pose_estimator(inputs_2d, x_poses, t, self.is_train)
+            pred_pose = self.pose_estimator(inputs_2d, x_poses, t, input_text, pre_text_tensor_train)
             # return pred_pose
             training_feat = {
                             "mpjpe": { "pred": pred_pose, "target": inputs_3d},        # 键名要等于 cfg.LOSS[*].log_prefix
                         }
             return training_feat
-
+        
 
     def prepare_diffusion_concat(self, pose_3d):
 

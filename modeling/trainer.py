@@ -130,11 +130,12 @@ class Trainer:
             N = 0
             iteration = 0
             quickdebug = self.cfg.get("DEBUG", False)
-            for cameras_train, batch_3d, batch_2d in train_loader:
+            for cameras_train, batch_3d, batch_2d, batch_act in train_loader:
                 if cameras_train is not None:
                     cameras_train = cameras_train.float()
                 inputs_3d = batch_3d.float()
                 inputs_2d = batch_2d.float()
+                inputs_act = batch_act
 
                 if torch.cuda.is_available():
                     inputs_3d = inputs_3d.cuda(non_blocking=True)
@@ -145,7 +146,7 @@ class Trainer:
                 inputs_3d[:, :, self.root_idx] = 0  # root 对齐
 
                 self.optimizer.zero_grad(set_to_none=True)
-                training_feat = model(inputs_2d, inputs_3d, None, self.training)
+                training_feat = model(inputs_2d, inputs_3d, None, self.training, inputs_act)
                 
                 # with autocast(enabled=self.scaler.is_enabled()):
                 #     loss_total, loss_info = self.loss_agg(training_feat)

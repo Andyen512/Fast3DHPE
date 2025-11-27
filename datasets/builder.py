@@ -184,7 +184,7 @@ def get_all_actions_by_subject(cfg, dataset, subjects_test):
 
 # ---------------- 数据展开与窗口化 ----------------
 def fetch(dataset, keypoints_2d, subjects, action_filter=None, subset=1.0, parse_3d_poses=True, downsample=1):
-    out_poses_3d, out_poses_2d, out_camera_params = [], [], []
+    out_poses_3d, out_poses_2d, out_camera_params, out_action = [], [], [], []
 
     for subject in subjects:
         for action in keypoints_2d[subject].keys():
@@ -195,6 +195,7 @@ def fetch(dataset, keypoints_2d, subjects, action_filter=None, subset=1.0, parse
             poses_2d = keypoints_2d[subject][action]
             for i in range(len(poses_2d)):
                 out_poses_2d.append(poses_2d[i])
+                out_action.append(action)
 
             if subject in dataset.cameras():
                 cams = dataset.cameras()[subject]
@@ -230,7 +231,7 @@ def fetch(dataset, keypoints_2d, subjects, action_filter=None, subset=1.0, parse
             if out_poses_3d is not None:
                 out_poses_3d[i] = out_poses_3d[i][::stride]
 
-    return out_camera_params, out_poses_3d, out_poses_2d
+    return out_camera_params, out_poses_3d, out_poses_2d, out_action
 
 def fetch_actions(actions, keypoints, dataset, downsample=1):
     out_poses_3d = []
@@ -369,8 +370,8 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
             # 划分 subject
             subjects_train, subjects_semi, subjects_test = _build_splits(cfg)  
 
-            cameras_train, poses_train, poses_train_2d = fetch(dataset, keypoints_2d, subjects_train, subset=subset, downsample=downsample)
-            cameras_valid, poses_valid, poses_valid_2d = fetch(dataset, keypoints_2d, subjects_test,  subset=1.0, downsample=downsample)
+            cameras_train, poses_train, poses_train_2d, action_train = fetch(dataset, keypoints_2d, subjects_train, subset=subset, downsample=downsample)
+            cameras_valid, poses_valid, poses_valid_2d, action_valid = fetch(dataset, keypoints_2d, subjects_test,  subset=1.0, downsample=downsample)
 
         elif train_dataset == "3DHP":
             # data_train, data_test, kps_left, kps_right = _load_dataset(cfg)
@@ -380,7 +381,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
             cameras_train, cameras_valid = None, None
 
     
-        train_dataset = ChunkDataset(poses_train_2d, poses_train, cameras_train,
+        train_dataset = ChunkDataset(poses_train_2d, poses_train, cameras_train, action_train,
                                 chunk_length=ds_cfg["number_of_frames"],
                                 pad= (receptive_field -1) // 2, 
                                 causal_shift=causal_shift,
@@ -391,7 +392,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
         train_loader = DataLoader(train_dataset, batch_size=batch_size//stride, sampler=sampler, num_workers=4, pin_memory=True)
     
         # 验证集简单用测试 subject 的较稀疏滑窗
-        val_dataset = UnchunkDataset(poses_valid_2d, poses_valid, cameras_valid,
+        val_dataset = UnchunkDataset(poses_valid_2d, poses_valid, cameras_valid, action_valid,
                 pad=(receptive_field -1) // 2, 
                 causal_shift=causal_shift,
                 augment=False,

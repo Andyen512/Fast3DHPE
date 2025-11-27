@@ -12,13 +12,14 @@ from remote_pdb import set_trace
      
 
 class PoseChunkDataset_H36M(Dataset):
-    def __init__(self, poses_2d, poses_3d=None, cameras=None,
+    def __init__(self, poses_2d, poses_3d=None, cameras=None, action=None,
                  chunk_length=1, pad=0, causal_shift=0, random_seed=1234,
                  augment=False, kps_left=None, kps_right=None, joints_left=None, joints_right=None):
 
         self.poses_2d = poses_2d
         self.poses_3d = poses_3d
         self.cameras = cameras
+        self.action = action
         self.chunk_length = chunk_length
         self.pad = pad
         self.causal_shift = causal_shift
@@ -83,8 +84,8 @@ class PoseChunkDataset_H36M(Dataset):
         else:
             cam = np.zeros_like(chunk_3d)  # 占位，保持一致
 
-
-        return cam, chunk_3d, chunk_2d
+        action = self.action[seq_i]  # Ensure ndarray
+        return cam, chunk_3d, chunk_2d, action
 
 
     def _pad_sequence(self, seq, start, end):
@@ -98,7 +99,7 @@ class PoseChunkDataset_H36M(Dataset):
         return chunk
 
 class PoseUnchunkedDataset_H36M(Dataset):
-    def __init__(self, poses_2d, poses_3d=None, cameras=None,
+    def __init__(self, poses_2d, poses_3d=None, cameras=None, action=None,
                  pad=0, causal_shift=0, augment=False,
                  kps_left=None, kps_right=None, joints_left=None, joints_right=None):
 
@@ -108,6 +109,7 @@ class PoseUnchunkedDataset_H36M(Dataset):
         self.poses_2d = poses_2d
         self.poses_3d = poses_3d
         self.cameras = cameras
+        self.action = action
         self.pad = pad
         self.causal_shift = causal_shift
         self.augment = False

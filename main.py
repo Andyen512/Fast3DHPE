@@ -9,6 +9,7 @@ from modeling.trainer import Trainer
 from modeling import models
 from remote_pdb import set_trace
 
+
 def parse_args():
     p = argparse.ArgumentParser(description="DDHPose train (OpenGait-style)")
     p.add_argument("--cfg", type=str, required=True)
