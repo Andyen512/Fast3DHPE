@@ -504,7 +504,7 @@ class D3DP(nn.Module):
         x_start = None
         preds_all = []
         for time, time_next in time_pairs:
-            time_cond = torch.full((batch,), time, dtype=torch.long).cuda()
+            time_cond = torch.full((batch,), time, dtype=torch.long).to(inputs_2d.device)
             # self_cond = x_start if self.self_condition else None
 
             #print("%d/%d" % (time, total_timesteps))

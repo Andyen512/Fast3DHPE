@@ -234,7 +234,7 @@ class DDHPose(nn.Module):
 
         preds_all_pos = []
         for time, time_next in time_pairs:
-            time_cond = torch.full((batch,), time, dtype=torch.long).cuda()
+            time_cond = torch.full((batch,), time, dtype=torch.long).to(inputs_2d.device)
             # self_cond = x_start if self.self_condition else None
 
             #print("%d/%d" % (time, total_timesteps))
@@ -358,14 +358,15 @@ class DDHPose(nn.Module):
         return x_dir, noise_dir, x_bone, noise_bone, t
 
     def prepare_targets(self, targets):
+        device = targets.device
         diffused_dir = []
         noises_dir = []
         diffused_bone_length = []
         noises_bone_length = []
         ts = []
         
-        targets_dir = torch.zeros(targets.shape[0],targets.shape[1],targets.shape[2],3).cuda()
-        targets_bone_length = torch.zeros(targets.shape[0],targets.shape[1],targets.shape[2],1).cuda()
+        targets_dir = torch.zeros(targets.shape[0],targets.shape[1],targets.shape[2],3).to(device)
+        targets_bone_length = torch.zeros(targets.shape[0],targets.shape[1],targets.shape[2],1).to(device)
         dir = getbonedirect(targets,self.boneindex)
         bone_length = getbonelength(targets,self.boneindex)
         targets_dir[:,:,:self.rootidx] = dir[:,:,:self.rootidx]

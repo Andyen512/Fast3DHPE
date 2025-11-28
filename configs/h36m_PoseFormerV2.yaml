@@ -1,0 +1,81 @@
+# ========= 数据集部分 =========
+DATASET:
+  train_dataset: "H36M"                   # 数据集名称，会影响加载路径
+  root: "data"                   # 存放 data_3d_h36m.npz / data_2d_h36m_xxx.npz 的目录
+  keypoints: "cpn_ft_h36m_dbb"   # 你用的 2D 关键点检测器名字
+  subjects_train: "S1,S5,S6,S7,S8"   # 训练 subject
+  subjects_unlabeled:  ""           # 测试 subject
+  subjects_test: "S9,S11"             # 半监督用的（可空）
+  seq_len: 243                   # 每个 clip 的帧数
+  downsample: 1                  # 全局下采样因子
+  train_stride: 81               # 训练时滑窗步长（例：81）
+  eval_stride: 243               # 测试时滑窗步长（整段一窗）
+  subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
+  number_of_frames: 243
+  batch_size: 768
+  stride: 243
+  Root_idx: 0
+  Cross_Dataset: False
+  test_dataset: H36M
+
+  Test:
+    actions: '*'   
+    P2: True 
+
+# ========= 模型部分 =========
+MODEL:
+  name: "PoseFormerV2"
+  backbone:
+    num_frame: 243   # 对齐数据长度
+    num_joints: 17
+    in_chans: 2                     # 输入通道（2D坐标 → x,y）
+    embed_dim_ratio: 32
+    depth: 4
+    num_heads: 8
+    mlp_ratio: 2.0
+    qkv_bias: True
+    drop_path_rate: 0.1
+    number_of_kept_frames: 27
+    number_of_kept_coeffs: 27
+
+
+
+# ========= 损失 =========
+LOSS:
+  type: "MPJPELoss"
+  log_prefix: "mpjpe"
+  loss_term_weight: 1.0
+
+LOSS_EVAL:
+  type: "MPJPELoss"
+  log_prefix: "mpjpe"
+  loss_term_weight: 1.0
+
+
+# ========= 优化器 & 学习率 =========
+OPTIM:
+  name: "AdamW"
+  lr: 0.00012
+  weight_decay: 0.1
+  lr_decay: 0.990
+
+SCHED:
+  name: "Cosine"
+  warmup_epochs: 5
+  max_epochs: 400
+
+# ========= 训练引擎 =========
+ENGINE:
+  save_name: "h36m_PoseFormerV2_lr00012_lrd990"    # 保存路径的一部分
+  amp: true                    # 自动混合精度
+  find_unused_parameters: False
+  log_interval: 50
+  val_interval: 1
+  save_freq: 200
+
+# ========= 运行时设置 =========
+RUNTIME:
+  seed: 1
+
+DEBUG: False
+EVAL: True

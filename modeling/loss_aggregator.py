@@ -29,25 +29,22 @@ class Odict(dict):
 
 
 class LossAggregator(nn.Module):
-    """
-    OpenGait 风格：把多个 loss 统一配置、统一前向，返回 (loss_sum, loss_info)
-    loss_cfg 支持 dict（单个）或 list[dict]（多个）
-    """
-    def __init__(self, loss_cfg) -> None:
+    def __init__(self, loss_cfg):
         super().__init__()
         if is_dict(loss_cfg):
-            items = { loss_cfg["log_prefix"]: self._build_loss_(loss_cfg) }
+            items = {loss_cfg["log_prefix"]: self._build_loss_(loss_cfg)}
         else:
-            items = { cfg["log_prefix"]: self._build_loss_(cfg) for cfg in loss_cfg }
+            items = {cfg["log_prefix"]: self._build_loss_(cfg) for cfg in loss_cfg}
         self.losses = nn.ModuleDict(items)
 
     def _build_loss_(self, cfg):
-        Loss = get_attr_from([losses], cfg["type"])           # 例如 "MPJPELoss"
+        Loss = get_attr_from([losses], cfg["type"])
         valid = get_valid_args(Loss, cfg, drop_keys=["type", "gather_and_scale", "log_prefix", "loss_term_weight"])
         loss = Loss(**valid)
-        # 设置权重；OpenGait 用 loss.loss_term_weight
+
         loss.loss_term_weight = float(cfg.get("loss_term_weight", 1.0))
-        return get_ddp_module(loss.cuda())
+
+        return loss
 
     def forward(self, training_feats: dict):
         """

@@ -25,7 +25,12 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    local_rank = int(os.environ.get("LOCAL_RANK", args.local_rank))
+    torch.cuda.set_device(local_rank)
+    device = torch.device("cuda", local_rank)
     init_distributed_mode("nccl")
+    
     cfg = load_cfg(args.cfg)
 
     out_dir = os.path.join("outputs", cfg["DATASET"]["test_dataset"], cfg["MODEL"]["name"], cfg["ENGINE"]["save_name"])
@@ -52,11 +57,14 @@ def main():
     model = Model(**cfg["MODEL"]["backbone"], joints_left=bundle.joints_left, joints_right=bundle.joints_right, \
                   rootidx=cfg["DATASET"]["Root_idx"], dataset_skeleton=bundle.dataset.skeleton)
     # 设备 & DDP
-    local_rank = int(os.environ.get("LOCAL_RANK", args.local_rank))
-    torch.cuda.set_device(local_rank)
-    model = model.cuda(local_rank)
-    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[local_rank],
-        find_unused_parameters=cfg.get("ENGINE", {}).get("find_unused_parameters", False))
+
+    model = model.to(device)
+    model = torch.nn.parallel.DistributedDataParallel(
+        model,
+        device_ids=[local_rank],
+        output_device=local_rank,
+        find_unused_parameters=cfg.get("ENGINE", {}).get("find_unused_parameters", False),
+    )
 
     if args.resume or args.evaluate:
         tag = args.resume if args.resume else args.evaluate
@@ -70,7 +78,7 @@ def main():
         n_params = sum(p.numel() for p in model.parameters())
         logger.info(f"Params: {n_params/1e6:.2f} M")
     
-    trainer = Trainer(cfg, logger, out_dir)
+    trainer = Trainer(cfg, logger, out_dir, device)
     if args.phase == "train":
         if args.resume:
             trainer.train(model, bundle.train_loader, bundle.val_loader, bundle, ckpt_path)

@@ -14,7 +14,7 @@ __all__ = ["FinePOSE"]
 ModelPrediction = namedtuple('ModelPrediction', ['pred_noise', 'pred_x_start'])
 def encode_text1(text):
     with torch.no_grad():
-        text = clip.tokenize(text, truncate=True).cuda()
+        text = clip.tokenize(text, truncate=True)
         return text
     
 pre_text_information = [
@@ -26,12 +26,6 @@ pre_text_information = [
     "leg",
 ]
 
-pre_text_tensor = []
-for i in pre_text_information:
-    tmp_text = encode_text1(i)
-    pre_text_tensor.append(tmp_text)
-
-pre_text_tensor = torch.cat(pre_text_tensor, dim=0)
 
 def set_requires_grad(nets, requires_grad=False):
     """Set requies_grad for all the networks.
@@ -609,6 +603,13 @@ class  FinePOSE(nn.Module):
         if is_train:
             drop_path_rate=0.1
 
+        pre_text_tensor = []
+        for i in pre_text_information:
+            tmp_text = encode_text1(i)
+            pre_text_tensor.append(tmp_text)
+
+        self.pre_text_tensor = torch.cat(pre_text_tensor, dim=0)
+
         self.pose_estimator = FinePOSE_MixSTE(num_frame=num_frame, num_joints=num_joints, in_chans=in_chans, embed_dim_ratio=embed_dim_ratio, 
                                               depth=depth, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale, 
                                               drop_path_rate=drop_path_rate, is_train=is_train)
@@ -699,6 +700,7 @@ class  FinePOSE(nn.Module):
 
     @torch.no_grad()
     def ddim_sample_flip(self, inputs_2d, inputs_3d, input_text, pre_text_tensor, clip_denoised=True, do_postprocess=True, input_2d_flip=None):
+        device = inputs_2d.device
         batch = inputs_2d.shape[0]
         shape = (batch, self.num_proposals, self.frames, 17, 3)
         total_timesteps, sampling_timesteps, eta, objective = self.num_timesteps, self.sampling_timesteps, self.ddim_sampling_eta, self.objective
@@ -707,12 +709,12 @@ class  FinePOSE(nn.Module):
         times = list(reversed(times.int().tolist()))
         time_pairs = list(zip(times[:-1], times[1:]))
 
-        img = torch.randn(shape, device='cuda')
+        img = torch.randn(shape).to(device)
 
         x_start = None
         preds_all = []
         for time, time_next in time_pairs:
-            time_cond = torch.full((batch,), time, dtype=torch.long).cuda()
+            time_cond = torch.full((batch,), time, dtype=torch.long).to(device)
 
 
             preds = self.model_predictions_fliping(img, inputs_2d, input_2d_flip, time_cond, input_text, pre_text_tensor)
@@ -756,8 +758,9 @@ class  FinePOSE(nn.Module):
             tmp_text = encode_text1(act)   # 假设返回的是 [1, D] 之类的 Tensor
             input_text_list.append(tmp_text)
 
+
         input_text = torch.cat(input_text_list, dim=0).to(inputs_2d.device)  # [B, D]
-        pre_text_tensor_cuda = pre_text_tensor.to(inputs_2d.device)
+        pre_text_tensor_cuda = self.pre_text_tensor.to(inputs_2d.device)
         pre_text_tensor_train = pre_text_tensor_cuda.unsqueeze(dim=0)
         pre_text_tensor_train = pre_text_tensor_train.repeat(input_text.shape[0], 1, 1).to(inputs_2d.device)
 

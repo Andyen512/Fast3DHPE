@@ -67,7 +67,7 @@ def save_checkpoint(model, optimizer, scheduler, cfg, out_dir,
         print(f"Checkpoint saved: {save_path}")
 
 class Trainer:
-    def __init__(self, cfg, logger, out_dir):
+    def __init__(self, cfg, logger, out_dir, device):
         self.cfg = cfg
         self.dataset_cfg = cfg.get("DATASET", {})
         self.root_idx = self.dataset_cfg['Root_idx']
@@ -76,7 +76,7 @@ class Trainer:
         loss_cfg = cfg.get("LOSS", {"type": "MPJPELoss", "log_prefix": "mpjpe", "loss_term_weight": 1.0})
         self.loss_agg = LossAggregator(loss_cfg)
         loss_eval = cfg.get("LOSS_EVAL", {"type": "MPJPELoss", "log_prefix": "mpjpe", "loss_term_weight": 1.0})
-        self.loss_eval = LossAggregator(loss_eval)
+        self.loss_eval = LossAggregator(loss_eval).to(device)
         self.iteration = 0
         self.optimizer = None
         self.scheduler = None
