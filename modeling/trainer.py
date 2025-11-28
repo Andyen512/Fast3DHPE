@@ -114,7 +114,7 @@ class Trainer:
             if 'optimizer' in checkpoint and checkpoint['optimizer'] is not None:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
         
-        receptive_field = self.cfg["DATASET"]["number_of_frames"]
+        receptive_field = self.cfg["DATASET"]["receptive_field"]
         epochs = self.cfg.get("SCHED", {}).get("max_epochs", 1)
         device = torch.device('cuda', torch.cuda.current_device()) if torch.cuda.is_available() else torch.device('cpu')
         losses_3d_train = []

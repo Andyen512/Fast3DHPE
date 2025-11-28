@@ -278,7 +278,7 @@ def build_data_bundle_test_H36M(cfg, kps_left, kps_right, joints_left, joints_ri
 
         cameras_act, poses_act, poses_2d_act = fetch_actions(actions[action_key], keypoints, dataset)
         act_dataset = PoseUnchunkedDataset(poses_2d_act, poses_act, cameras_act,
-                                        pad=(cfg["DATASET"]["number_of_frames"] -1) // 2, 
+                                        pad=(cfg["DATASET"]["receptive_field"] - cfg["DATASET"]["chunk_size"]) // 2, 
                                         causal_shift=0, augment=True,
                                         kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
                                         joints_right=joints_right)
@@ -343,7 +343,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
     # 注意：OpenGait 风格是 DDP 分布式采样器
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
-    receptive_field = ds_cfg["number_of_frames"]
+    receptive_field = ds_cfg["receptive_field"]
     batch_size = ds_cfg["batch_size"]
     stride = ds_cfg["stride"]
     causal_shift = 0
@@ -382,8 +382,8 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
 
     
         train_dataset = ChunkDataset(poses_train_2d, poses_train, cameras_train, action_train,
-                                chunk_length=ds_cfg["number_of_frames"],
-                                pad= (receptive_field -1) // 2, 
+                                chunk_length=ds_cfg["chunk_size"],
+                                pad= (receptive_field - ds_cfg["chunk_size"]) // 2, 
                                 causal_shift=causal_shift,
                                 augment=True,
                                 kps_left=kps_left, kps_right=kps_right,

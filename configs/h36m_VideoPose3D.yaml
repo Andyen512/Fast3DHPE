@@ -6,14 +6,15 @@ DATASET:
   subjects_train: "S1,S5,S6,S7,S8"   # 训练 subject
   subjects_unlabeled:  ""           # 测试 subject
   subjects_test: "S9,S11"             # 半监督用的（可空）
-  seq_len: 243                   # 每个 clip 的帧数
+  seq_len: 1                   # 每个 clip 的帧数
   downsample: 1                  # 全局下采样因子
   train_stride: 81               # 训练时滑窗步长（例：81）
   eval_stride: 243               # 测试时滑窗步长（整段一窗）
   subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
-  number_of_frames: 243
-  batch_size: 768
-  stride: 243
+  receptive_field: 243
+  chunk_size: 1
+  batch_size: 1024
+  stride: 1
   Root_idx: 0
   Cross_Dataset: False
   test_dataset: H36M
@@ -24,17 +25,17 @@ DATASET:
 
 # ========= 模型部分 =========
 MODEL:
-  name: "MixSTE"
+  name: "VideoPose3D"
   backbone:
-    num_frame: 243   # 对齐数据长度
     num_joints: 17
     in_chans: 2                     # 输入通道（2D坐标 → x,y）
-    embed_dim_ratio: 512
-    depth: 8
-    num_heads: 8
-    mlp_ratio: 2.0
-    qkv_bias: True
-    drop_path_rate: 0.1
+    embed_dim_ratio: 1024
+    drop_path_rate: 0.25
+    filter_widths: [3, 3, 3, 3, 3]
+    dense: False
+    causal: False
+    
+    
 
 # ========= 损失 =========
 LOSS:
@@ -62,9 +63,9 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_mixste_lr00012_lrd990_torch23"    # 保存路径的一部分
+  save_name: "h36m_VideoPose3D_lr00012_lrd990"    # 保存路径的一部分
   amp: true                    # 自动混合精度
-  find_unused_parameters: false
+  find_unused_parameters: False
   log_interval: 50
   val_interval: 1
   save_freq: 200

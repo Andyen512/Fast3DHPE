@@ -300,7 +300,7 @@ class  MixSTE(nn.Module):
         self.rootidx = rootidx
         
         
-    def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False):
+    def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False, inputs_act=None):
         predicted_3d_pos = self.model_pos(inputs_2d)
         
         if input_2d_flip is not None:

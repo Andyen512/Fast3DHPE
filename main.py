@@ -50,7 +50,7 @@ def main():
         else:
             bundle_list = build_data_bundle(cfg, training=False)
             bundle = bundle_list[0]  # 随便取一个，主要是为了拿到 skeleton/joints 信息
-        
+
     # 构建模型
     model_name = cfg["MODEL"]["name"]
     Model = getattr(models, model_name)    
