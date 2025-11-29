@@ -387,7 +387,9 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
                                 causal_shift=causal_shift,
                                 augment=True,
                                 kps_left=kps_left, kps_right=kps_right,
-                                joints_left=joints_left, joints_right=joints_right)
+                                joints_left=joints_left, joints_right=joints_right,
+                                dataset_type=ds_cfg["dataset_type"],
+                                frame_stride=ds_cfg["frame_stride"])
         sampler = DistributedSampler(train_dataset, num_replicas=torch.distributed.get_world_size(), rank=dist.get_rank(), shuffle=True)
         train_loader = DataLoader(train_dataset, batch_size=batch_size//stride, sampler=sampler, num_workers=4, pin_memory=True)
     

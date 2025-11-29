@@ -7,14 +7,129 @@ from functools import partial
 import torch_dct as dct
 from remote_pdb import set_trace
 
+
+
+
+class STC_ATTENTION(nn.Module):
+    def __init__(self, d_time, d_joint, d_coor, head=8):
+        super().__init__()
+        # print(d_time, d_joint, d_coor,head)
+        self.qkv = nn.Linear(d_coor, d_coor * 3)
+        self.head = head
+        self.layer_norm = nn.LayerNorm(d_coor)
+
+        self.scale = (d_coor // 2) ** -0.5
+        self.proj = nn.Linear(d_coor, d_coor)
+        self.d_time = d_time
+        self.d_joint = d_joint
+        self.head = head
+
+        # sep1
+        # print(d_coor)
+        self.emb = nn.Embedding(5, d_coor//head//2)
+        self.register_buffer(
+            "part",
+            torch.tensor([0, 1, 1, 1, 2, 2, 2, 0, 0, 0, 0, 3, 3, 3, 4, 4, 4], dtype=torch.long)
+        )
+
+        # sep2
+        self.sep2_t = nn.Conv2d(d_coor // 2, d_coor // 2, kernel_size=3, stride=1, padding=1, groups=d_coor // 2)
+        self.sep2_s = nn.Conv2d(d_coor // 2, d_coor // 2, kernel_size=3, stride=1, padding=1, groups=d_coor // 2)
+
+        self.drop = DropPath(0.5)
+
+    def forward(self, input):
+        b, t, s, c = input.shape
+
+        h = input
+        x = self.layer_norm(input)
+
+        qkv = self.qkv(x)  # b, t, s, c-> b, t, s, 3*c
+        qkv = qkv.reshape(b, t, s, c, 3).permute(4, 0, 1, 2, 3)  # 3,b,t,s,c
+
+        # space group and time group
+        qkv_s, qkv_t = qkv.chunk(2, 4)  # [3,b,t,s,c//2],  [3,b,t,s,c//2]
+
+        q_s, k_s, v_s = qkv_s[0], qkv_s[1], qkv_s[2]  # b,t,s,c//2
+        q_t, k_t, v_t = qkv_t[0], qkv_t[1], qkv_t[2]  # b,t,s,c//2
+
+        # reshape for mat
+        q_s = rearrange(q_s, 'b t s (h c) -> (b h t) s c', h=self.head)  # b,t,s,c//2-> b*h*t,s,c//2//h
+        k_s = rearrange(k_s, 'b t s (h c) -> (b h t) c s ', h=self.head)  # b,t,s,c//2-> b*h*t,c//2//h,s
+
+        q_t = rearrange(q_t, 'b  t s (h c) -> (b h s) t c', h=self.head)  # b,t,s,c//2 -> b*h*s,t,c//2//h
+        k_t = rearrange(k_t, 'b  t s (h c) -> (b h s) c t ', h=self.head)  # b,t,s,c//2->  b*h*s,c//2//h,t
+
+        att_s = (q_s @ k_s) * self.scale  # b*h*t,s,s
+        att_t = (q_t @ k_t) * self.scale  # b*h*s,t,t
+
+        att_s = att_s.softmax(-1)  # b*h*t,s,s
+        att_t = att_t.softmax(-1)  # b*h*s,t,t
+
+        v_s = rearrange(v_s, 'b  t s c -> b c t s ')
+        v_t = rearrange(v_t, 'b  t s c -> b c t s ')
+
+        # sep2 
+        sep2_s = self.sep2_s(v_s)  # b,c//2,t,s
+        sep2_t = self.sep2_t(v_t)  # b,c//2,t,s
+        sep2_s = rearrange(sep2_s, 'b (h c) t s  -> (b h t) s c ', h=self.head)  # b*h*t,s,c//2//h
+        sep2_t = rearrange(sep2_t, 'b (h c) t s  -> (b h s) t c ', h=self.head)  # b*h*s,t,c//2//h
+
+        # sep1
+        # v_s = rearrange(v_s, 'b c t s -> (b t ) s c')
+        # v_t = rearrange(v_t, 'b c t s -> (b s ) t c')
+        # print(lep_s.shape)
+        sep_s = self.emb(self.part).unsqueeze(0)  # 1,s,c//2//h
+        sep_t = self.emb(self.part).unsqueeze(0).unsqueeze(0).unsqueeze(0)  # 1,1,1,s,c//2//h
+
+        # MSA
+        v_s = rearrange(v_s, 'b (h c) t s   -> (b h t) s c ', h=self.head)  # b*h*t,s,c//2//h
+        v_t = rearrange(v_t, 'b (h c) t s  -> (b h s) t c ', h=self.head)  # b*h*s,t,c//2//h
+
+        x_s = att_s @ v_s + sep2_s + 0.0001 * self.drop(sep_s)  # b*h*t,s,c//2//h
+        x_t = att_t @ v_t + sep2_t  # b*h,t,c//h                # b*h*s,t,c//2//h
+
+        x_s = rearrange(x_s, '(b h t) s c -> b h t s c ', h=self.head, t=t)  # b*h*t,s,c//h//2 -> b,h,t,s,c//h//2 
+        x_t = rearrange(x_t, '(b h s) t c -> b h t s c ', h=self.head, s=s)  # b*h*s,t,c//h//2 -> b,h,t,s,c//h//2 
+
+        x_t = x_t + 1e-9 * self.drop(sep_t)
+
+        x = torch.cat((x_s, x_t), -1)  # b,h,t,s,c//h
+        x = rearrange(x, 'b h t s c -> b  t s (h c) ')  # b,t,s,c
+
+        # projection and skip-connection
+        x = self.proj(x)
+        x = x + h
+        return x
+
+
+class STC_BLOCK(nn.Module):
+    def __init__(self, d_time, d_joint, d_coor):
+        super().__init__()
+
+        self.layer_norm = nn.LayerNorm(d_coor)
+
+        self.mlp = Mlp(d_coor, d_coor * 4, d_coor)
+
+        self.stc_att = STC_ATTENTION(d_time, d_joint, d_coor)
+        self.drop = DropPath(0.0)
+
+    def forward(self, input):
+        b, t, s, c = input.shape
+        x = self.stc_att(input)
+        x = x + self.drop(self.mlp(self.layer_norm(x)))
+
+        return x
+
+
 class Mlp(nn.Module):
-    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
+    def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.1):
         super().__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
-        self.fc1 = nn.Linear(in_features, hidden_features)
+        self.fc1 = nn.Linear(in_features, hidden_features, bias=False)
         self.act = act_layer()
-        self.fc2 = nn.Linear(hidden_features, out_features)
+        self.fc2 = nn.Linear(hidden_features, out_features, bias=False)
         self.drop = nn.Dropout(drop)
 
     def forward(self, x):
@@ -24,61 +139,11 @@ class Mlp(nn.Module):
         x = self.fc2(x)
         x = self.drop(x)
         return x
-
-class Attention(nn.Module):
-    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
-        super().__init__()
-        self.num_heads = num_heads
-        head_dim = dim // num_heads
-        # NOTE scale factor was wrong in my original version, can set manually to be compat with prev weights
-        self.scale = qk_scale or head_dim ** -0.5
-
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
-        self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
-        self.proj_drop = nn.Dropout(proj_drop)
-
-    def forward(self, x):
-        B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
-
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-
-        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-        return x
-
-class Block(nn.Module):
-
-    def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., act_layer=nn.GELU, norm_layer=nn.LayerNorm):
-        super().__init__()
-        self.norm1 = norm_layer(dim)
-        self.attn = Attention(
-            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
-        # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        self.norm2 = norm_layer(dim)
-        mlp_hidden_dim = int(dim * mlp_ratio)
-        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
-
-    def forward(self, x):
-        x = x + self.drop_path(self.attn(self.norm1(x)))
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x
     
 
 class  STCFormer_backbone(nn.Module):
-    def __init__(self, num_frame=9, num_joints=17, in_chans=2, embed_dim_ratio=32, depth=4,
-                 num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
-                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None):
-        super().__init__()  
-    def __init__(self, num_block, d_time, d_joint, d_coor ):
-        super(STCFormer, self).__init__()
+    def __init__(self, num_block, d_time, d_joint, d_coor):
+        super().__init__() 
 
         self.num_block = num_block
         self.d_time = d_time
@@ -97,20 +162,41 @@ class  STCFormer_backbone(nn.Module):
         # exit()
         return input
 
-class  STCFormer(nn.Module):
-    def __init__(self, num_frame=9, num_joints=17, in_chans=2, embed_dim_ratio=32, depth=4,
-                 num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
-                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  number_of_kept_frames=3, number_of_kept_coeffs=3,
+class Model(nn.Module):
+    def __init__(self, num_frame=243, num_block=4, d_time=9, num_joints=17, embed_dim_ratio=2,
                  norm_layer=None, joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
         super().__init__()  
 
-        self.model_pos = STCFormer_backbone(num_frame, num_joints, in_chans, embed_dim_ratio, depth,
-                        num_heads, mlp_ratio, qkv_bias, qk_scale, drop_rate, attn_drop_rate, drop_path_rate, norm_layer)
+        layers, d_hid, frames = num_block, embed_dim_ratio, num_frame
+        num_joints_in, num_joints_out = num_joints, num_joints
+
+        self.pose_emb = nn.Linear(2, d_hid, bias=False)
+        self.gelu = nn.GELU()
+        # self.stcformer = STCFormer(layers, frames, num_joints_in, d_hid)
+        self.stcformer = STCFormer_backbone(layers, frames, num_joints_in, embed_dim_ratio)
+        self.regress_head = nn.Linear(d_hid, 3, bias=False)
+
+    def forward(self, x):
+        # b, t, s, c = x.shape  #batch,frame,joint,coordinate
+        # dimension tranfer
+        x = self.pose_emb(x)
+        x = self.gelu(x)
+        # spatio-temporal correlation
+        x = self.stcformer(x)
+        # regression head
+        x = self.regress_head(x)
+
+        return x
+
+class  STCFormer(nn.Module):
+    def __init__(self, num_frame=243, num_block=4, d_time=9, num_joints=17, embed_dim_ratio=2,
+                 norm_layer=None, joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
+        super().__init__()  
+
+        self.model_pos = Model(num_frame, num_block, d_time, num_joints, embed_dim_ratio)
         self.joints_left = joints_left
         self.joints_right = joints_right
         self.rootidx = rootidx
-        
-        
         
     def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False, inputs_act=None):
         predicted_3d_pos = self.model_pos(inputs_2d)

@@ -15,7 +15,7 @@ class PoseChunkDataset_H36M(Dataset):
     def __init__(self, poses_2d, poses_3d=None, cameras=None, action=None,
                  chunk_length=1, pad=0, causal_shift=0, random_seed=1234,
                  augment=False, kps_left=None, kps_right=None, joints_left=None, joints_right=None,
-                 dataset_type= 'seq2frame'):
+                 dataset_type= 'seq2frame', frame_stride=1):
 
         self.poses_2d = poses_2d
         self.poses_3d = poses_3d
@@ -31,6 +31,7 @@ class PoseChunkDataset_H36M(Dataset):
         self.joints_right = joints_right
         self.random = np.random.RandomState(random_seed)
         self.dataset_type = dataset_type
+        self.frame_stride = frame_stride
 
         self.pairs = []  # (seq_idx, start, end, flip)
 
@@ -66,6 +67,10 @@ class PoseChunkDataset_H36M(Dataset):
             # ----------- 2D pose -------------
             seq_2d = np.asarray(self.poses_2d[seq_i])  # Ensure ndarray
             chunk_2d = self._pad_sequence(seq_2d, start_2d, end_2d)
+
+            if self.frame_stride > 1:
+                chunk_2d = chunk_2d[::self.frame_stride]
+
             if flip:
                 chunk_2d[:, :, 0] *= -1
                 chunk_2d[:, self.kps_left + self.kps_right] = chunk_2d[:, self.kps_right + self.kps_left]
@@ -75,6 +80,9 @@ class PoseChunkDataset_H36M(Dataset):
             if self.poses_3d is not None:
                 seq_3d = np.asarray(self.poses_3d[seq_i])
                 chunk_3d = self._pad_sequence(seq_3d, start_3d, end_3d)
+                if self.frame_stride > 1:
+                    chunk_3d = chunk_3d[::self.frame_stride]
+                    
                 if flip:
                     chunk_3d[:, :, 0] *= -1
                     chunk_3d[:, self.joints_left + self.joints_right] = chunk_3d[:, self.joints_right + self.joints_left]
