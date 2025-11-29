@@ -202,16 +202,40 @@ class  VideoPose3D(nn.Module):
                  joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
         super().__init__()  
 
+        self.model_eval = None
         # self.model_pos = TemporalModel(num_joints, in_chans, num_joints, filter_widths, causal, drop_path_rate, embed_dim_ratio, dense)
         self.model_pos = TemporalModelOptimized1f(num_joints, in_chans, num_joints,
                                     filter_widths=filter_widths, causal=causal, dropout=drop_path_rate, channels=embed_dim_ratio)
         self.joints_left = joints_left
         self.joints_right = joints_right
         self.rootidx = rootidx
-        
-        
+
+    def build_eval_model(self):
+        if self.model_eval is None:
+            self.model_eval = TemporalModel(
+                num_joints_in=self.model_pos.num_joints_in,
+                in_features=self.model_pos.in_features,
+                num_joints_out=self.model_pos.num_joints_out,
+                filter_widths=self.model_pos.filter_widths,
+                causal=self.model_pos.causal,
+                dropout=self.model_pos.dropout,
+                channels=self.model_pos.channels,
+            ).to(next(self.model_pos.parameters()).device)
+
+        # 拷贝参数
+        self.model_eval.load_state_dict(self.model_pos.state_dict(), strict=False)
+
+    def eval(self):
+        super().eval()
+        self.model_pos.eval()
+        self.build_eval_model()   # 构建并拷贝参数
+        self.model_eval.eval()
+        return self
     def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False, inputs_act=None):
-        predicted_3d_pos = self.model_pos(inputs_2d)
+        if istrain:
+            predicted_3d_pos = self.model_pos(inputs_2d)
+        else:
+            predicted_3d_pos = self.model_eval(inputs_2d)
         
         
         if input_2d_flip is not None:
