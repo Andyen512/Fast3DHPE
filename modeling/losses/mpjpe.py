@@ -28,7 +28,7 @@ class MPJPELoss(nn.Module):
         if pred.ndim == 4:
             # ---- Case A: pred, gt ∈ [B, T, J, 3] ----
             if target.ndim != 4:
-                raise ValueError(f"Case A 期望 gt.dim==4，但得到 {gt.ndim}")
+                raise ValueError(f"Case A 期望 gt.dim==4，但得到 {target.ndim}")
             diff = (pred - target) * self.scale
             mpjpe = diff.norm(dim=-1).mean()  # 标量
             info = {

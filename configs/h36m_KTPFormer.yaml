@@ -37,9 +37,12 @@ MODEL:
     num_heads: 8
     mlp_ratio: 2.0
     qkv_bias: True
+    qk_scale: 
     drop_rate: 0.
     attn_drop_rate: 0.
     drop_path_rate: 0.2
+    norm_layer: 
+    boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
 
 # ========= 损失 =========
 # LOSS:
@@ -48,10 +51,17 @@ MODEL:
 #   loss_term_weight: 1.0
 
 LOSS:
-  type: "Dis_MPJPELoss"
-  log_prefix: "mpjpe"
-  loss_term_weight: 1.0
-  boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
+  - type: "MPJPELoss"
+    log_prefix: "mpjpe"
+    loss_term_weight: 1.0
+  - type: "Dis_MPJPELoss"
+    log_prefix: "dis_mpjpe"
+    loss_term_weight: 1.0
+    boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
+  - type: "TemporalConsistencyLoss"
+    log_prefix: "diff_mpjpe"
+    loss_term_weight: 1.0
+    dataset: "H36M"
 
 
 LOSS_EVAL:

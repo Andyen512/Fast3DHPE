@@ -44,17 +44,19 @@ MODEL:
 
 # ========= 损失 =========
 LOSS:
-  type: "Dis_MPJPELoss"
-  log_prefix: "mpjpe"
-  loss_term_weight: 1.0
-  boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
-
+  - type: "MPJPELoss"
+    log_prefix: "mpjpe"
+    loss_term_weight: 1.0
+  - type: "Dis_MPJPELoss"
+    log_prefix: "dis_mpjpe"
+    loss_term_weight: 1.0
+    boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
 
 
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00013
+  lr: 0.00015
   weight_decay: 0.1
   lr_decay: 0.993
 

@@ -46,20 +46,24 @@ class Dis_MPJPELoss(nn.Module):
 
 
 
-    def forward(self, pred, gt, boneindex):
+    def forward(self, pred, target, boneindex):
         # [B,T,J,3]
-        loss_3d_pos = mpjpe(pred, gt)
+        # loss_3d_pos = mpjpe(pred, gt)
 
-        gt_len = getbonelength(gt, boneindex).mean(1)
+        gt_len = getbonelength(target, boneindex).mean(1)
         pd_len = getbonelength(pred, boneindex).mean(1)
         loss_length = torch.pow(gt_len - pd_len, 2).mean()
 
-        gt_dir = getbonedirect(gt, boneindex)  # [N, B, 3]
+        gt_dir = getbonedirect(target, boneindex)  # [N, B, 3]
         pd_dir = getbonedirect(pred, boneindex)
         loss_dir = torch.pow(gt_dir - pd_dir, 2).sum(3).mean()
 
-        loss_total = loss_3d_pos + loss_length + loss_dir
-        
-        return loss_total, {"loss_total": loss_total ,
-                       "loss_3d_pos": loss_3d_pos}
+        # loss_total = loss_3d_pos + loss_length + loss_dir
+        loss_dis = loss_length + loss_dir
+
+        return loss_dis, {"loss_dis": loss_dis}
+                    #    "loss_3d_pos": loss_3d_pos}
+
+        # return loss_total, {"loss_total": loss_total ,
+        #                "loss_3d_pos": loss_3d_pos}
 
