@@ -18,6 +18,8 @@ DATASET:
   Root_idx: 0
   Cross_Dataset: False
   test_dataset: H36M
+  dataset_type: 'seq2seq'
+  frame_stride: 1
 
   Test:
     actions: '*'   
@@ -36,17 +38,19 @@ MODEL:
     mlp_ratio: 2.0
     qkv_bias: True
     drop_path_rate: 0.1
+    boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
 
 # ========= 损失 =========
-LOSS:
-  type: "MPJPELoss"
-  log_prefix: "mpjpe"
-  loss_term_weight: 1.0
+# LOSS:
+#   type: "MPJPELoss"
+#   log_prefix: "mpjpe"
+#   loss_term_weight: 1.0
 
-LOSS_EVAL:
-  type: "MPJPELoss"
+LOSS:
+  type: "Dis_MPJPELoss"
   log_prefix: "mpjpe"
   loss_term_weight: 1.0
+  boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
 
 
 # ========= 优化器 & 学习率 =========
@@ -54,7 +58,7 @@ OPTIM:
   name: "AdamW"
   lr: 0.00013
   weight_decay: 0.1
-  lr_decay: 0.995
+  lr_decay: 0.993
 
 SCHED:
   name: "Cosine"
@@ -63,7 +67,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_mixste_lr00013_lrd995_torch23"    # 保存路径的一部分
+  save_name: "h36m_mixste_lr00013_lrd993_dismpjpe_torch23"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: false
   log_interval: 50

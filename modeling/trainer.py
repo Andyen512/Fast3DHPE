@@ -181,11 +181,12 @@ class Trainer:
                 local_cnt = torch.zeros(1, device=device, dtype=torch.float32)
 
                 with torch.inference_mode():
-                    for cam, batch_3d, batch_2d, _ in val_loader:
+                    for cam, batch_3d, batch_2d, batch_act in val_loader:
                         if cam is not None:
                             cam = cam.float()
                         inputs_3d = batch_3d.float()
                         inputs_2d = batch_2d.float()
+                        inputs_act = batch_act
 
                         inputs_2d_flip = inputs_2d.clone()
                         inputs_2d_flip[..., 0] *= -1
@@ -202,7 +203,7 @@ class Trainer:
                             inputs_2d_flip = inputs_2d_flip.cuda(non_blocking=True)
               
                         inputs_3d[..., self.root_idx, :] = 0  # root 对齐
-                        pred_3d = model(inputs_2d, inputs_3d, inputs_2d_flip, self.training)
+                        pred_3d = model(inputs_2d, inputs_3d, inputs_2d_flip, self.training, inputs_act)
 
                         # ====== 损失计算（和训练时保持一致）======
                         training_feat = {

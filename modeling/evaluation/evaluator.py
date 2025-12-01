@@ -172,8 +172,8 @@ def evaluate( cfg,
 
                 ##### convert size
                 inputs_3d_p = inputs_3d
-                inputs_2d, inputs_3d = eval_data_prepare(cfg['DATASET']['number_of_frames'], inputs_2d, inputs_3d_p)
-                inputs_2d_flip, _ = eval_data_prepare(cfg['DATASET']['number_of_frames'], inputs_2d_flip, inputs_3d_p)
+                inputs_2d, inputs_3d = eval_data_prepare(cfg['DATASET']['chunk_size'], inputs_2d, inputs_3d_p)
+                inputs_2d_flip, _ = eval_data_prepare(cfg['DATASET']['chunk_size'], inputs_2d_flip, inputs_3d_p)
                 
                 if torch.cuda.is_available():
                     inputs_2d = inputs_2d.cuda()

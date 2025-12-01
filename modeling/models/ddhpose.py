@@ -310,7 +310,7 @@ class DDHPose(nn.Module):
 
             # return pred_pose
             training_feat = {
-                            "dis_mpjpe": { "pred": pred_pose, "gt": inputs_3d, "boneindex": self.boneindex},        # 键名要等于 cfg.LOSS[*].log_prefix
+                            "mpjpe": { "pred": pred_pose, "gt": inputs_3d, "boneindex": self.boneindex},        # 键名要等于 cfg.LOSS[*].log_prefix
                         }
             return training_feat
 

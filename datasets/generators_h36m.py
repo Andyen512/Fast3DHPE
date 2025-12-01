@@ -189,7 +189,9 @@ class PoseUnchunkedDataset_H36M(Dataset):
 
     def __getitem__(self, idx):
         seq_2d = self.poses_2d[idx]
+        batch_act = self.action[idx]
         chunk_2d = np.expand_dims(seq_2d, axis=0)  # (1, T, J, 2)
+
         chunk_3d = None
         if self.poses_3d is not None:
             seq_3d = self.poses_3d[idx]
@@ -214,8 +216,7 @@ class PoseUnchunkedDataset_H36M(Dataset):
             chunk_2d[1, :, :, 0] *= -1
             chunk_2d[1, :, self.kps_left + self.kps_right] = chunk_2d[1, :, self.kps_right + self.kps_left]
 
-
-        return cam, chunk_3d, chunk_2d, None
+        return cam, chunk_3d, chunk_2d, batch_act
 
 # class PoseUnchunkedDataset_H36M(Dataset):
 #     def __init__(self, poses_2d, poses_3d=None, cameras=None, action=None,

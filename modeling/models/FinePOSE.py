@@ -505,7 +505,9 @@ class  FinePOSE_MixSTE(nn.Module):
         xf_out = xf_out.permute(1, 0, 2)
         return xf_proj, xf_out
 
-    def forward(self, x_2d, x_3d, t, text, pre_text_tensor):
+
+    def forward(self, x_2d, x_3d, t, is_train, text, pre_text_tensor):
+        self.is_train = is_train
         if self.is_train:
             b, f, n, c = x_2d.shape
         else:
@@ -518,7 +520,6 @@ class  FinePOSE_MixSTE(nn.Module):
         x = self.temporal_cross_attn(x, xf_out, time_embed)
 
         x = self.TTE_foward(x)
-
 
         x = rearrange(x, '(b n) f cw -> b f n cw', n=n)
         x = self.ST_foward(x)
@@ -551,6 +552,10 @@ class  FinePOSE(nn.Module):
         self.joints_right = joints_right
         self.is_train = is_train
         self.scale = scale
+        boneindextemp = boneindextemp.split(',')
+        self.boneindex = []
+        for i in range(0,len(boneindextemp),2):
+            self.boneindex.append([int(boneindextemp[i]), int(boneindextemp[i+1])])
         self.rootidx = rootidx
 
         # build diffusion
@@ -632,7 +637,7 @@ class  FinePOSE(nn.Module):
 
         return ModelPrediction(pred_noise, x_start)
 
-    def model_predictions_fliping(self, x, inputs_2d, inputs_2d_flip, t, input_text, pre_text_tensor):
+    def model_predictions_fliping(self, x, inputs_2d, inputs_2d_flip, t, is_train, input_text, pre_text_tensor):
         x_t = torch.clamp(x, min=-1.1 * self.scale, max=1.1*self.scale)
         x_t = x_t / self.scale
         x_t_flip = x_t.clone()
@@ -640,8 +645,8 @@ class  FinePOSE(nn.Module):
         x_t_flip[:, :, :, self.joints_left + self.joints_right] = x_t_flip[:, :, :,
                                                                         self.joints_right + self.joints_left]
 
-        pred_pose = self.pose_estimator(inputs_2d, x_t, t, input_text, pre_text_tensor)
-        pred_pose_flip = self.pose_estimator(inputs_2d_flip, x_t_flip, t, input_text, pre_text_tensor)
+        pred_pose = self.pose_estimator(inputs_2d, x_t, t, is_train, input_text, pre_text_tensor)
+        pred_pose_flip = self.pose_estimator(inputs_2d_flip, x_t_flip, t, is_train, input_text, pre_text_tensor)
 
         pred_pose_flip[:, :, :, :, 0] *= -1
         pred_pose_flip[:, :, :, self.joints_left + self.joints_right] = pred_pose_flip[:, :, :,
@@ -699,7 +704,7 @@ class  FinePOSE(nn.Module):
         return preds_all
 
     @torch.no_grad()
-    def ddim_sample_flip(self, inputs_2d, inputs_3d, input_text, pre_text_tensor, clip_denoised=True, do_postprocess=True, input_2d_flip=None):
+    def ddim_sample_flip(self, inputs_2d, inputs_3d, is_train, input_text, pre_text_tensor, clip_denoised=True, do_postprocess=True, input_2d_flip=None):
         device = inputs_2d.device
         batch = inputs_2d.shape[0]
         shape = (batch, self.num_proposals, self.frames, 17, 3)
@@ -717,7 +722,7 @@ class  FinePOSE(nn.Module):
             time_cond = torch.full((batch,), time, dtype=torch.long).to(device)
 
 
-            preds = self.model_predictions_fliping(img, inputs_2d, input_2d_flip, time_cond, input_text, pre_text_tensor)
+            preds = self.model_predictions_fliping(img, inputs_2d, input_2d_flip, time_cond, is_train, input_text, pre_text_tensor)
             pred_noise, x_start = preds.pred_noise, preds.pred_x_start
 
             preds_all.append(x_start)
@@ -751,7 +756,7 @@ class  FinePOSE(nn.Module):
         return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
     
     def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False, inputs_act=None):
-        
+        self.is_train = istrain
         cleaned_act = [s.split(" ")[0] for s in inputs_act]
         input_text_list = []
         for act in cleaned_act:
@@ -764,13 +769,12 @@ class  FinePOSE(nn.Module):
         pre_text_tensor_train = pre_text_tensor_cuda.unsqueeze(dim=0)
         pre_text_tensor_train = pre_text_tensor_train.repeat(input_text.shape[0], 1, 1).to(inputs_2d.device)
 
-        self.is_train = istrain
         # Prepare Proposals.
         if not self.is_train:
             if self.flip:
-                results = self.ddim_sample_flip(inputs_2d, inputs_3d, input_text, pre_text_tensor_train, input_2d_flip=input_2d_flip)
+                results = self.ddim_sample_flip(inputs_2d, inputs_3d, self.is_train, input_text, pre_text_tensor_train, input_2d_flip=input_2d_flip)
             else:
-                results = self.ddim_sample(inputs_2d, inputs_3d, input_text, pre_text_tensor_train)
+                results = self.ddim_sample(inputs_2d, inputs_3d, self.is_train, input_text, pre_text_tensor_train)
             return results
 
         if self.is_train:
@@ -779,10 +783,11 @@ class  FinePOSE(nn.Module):
             t = t.squeeze(-1)
 
             # pred_pose = self.pose_estimator(inputs_2d, x_poses, t, self.is_train)
-            pred_pose = self.pose_estimator(inputs_2d, x_poses, t, input_text, pre_text_tensor_train)
+            pred_pose = self.pose_estimator(inputs_2d, x_poses, t, self.is_train, input_text, pre_text_tensor_train)
             # return pred_pose
             training_feat = {
-                            "mpjpe": { "pred": pred_pose, "target": inputs_3d},        # 键名要等于 cfg.LOSS[*].log_prefix
+                            # "mpjpe": { "pred": pred_pose, "target": inputs_3d},       
+                            "mpjpe": { "pred": pred_pose, "gt": inputs_3d, "boneindex": self.boneindex},
                         }
             return training_feat
         

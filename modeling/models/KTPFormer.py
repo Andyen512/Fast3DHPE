@@ -702,7 +702,7 @@ class  KTPFormer(nn.Module):
     def __init__(self, num_frame=9, num_joints=17, in_chans=2, embed_dim_ratio=32, depth=4,
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None, 
-                 joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
+                 boneindextemp=None, joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
         super().__init__()  
 
         temporal_skeleton = list(range(0, num_frame))
@@ -717,6 +717,10 @@ class  KTPFormer(nn.Module):
         self.joints_left = joints_left
         self.joints_right = joints_right
         self.rootidx = rootidx
+        boneindextemp = boneindextemp.split(',')
+        self.boneindex = []
+        for i in range(0,len(boneindextemp),2):
+            self.boneindex.append([int(boneindextemp[i]), int(boneindextemp[i+1])])
 
     def adj_mx_from_edges(self, num_pts, edges, sparse=True):
         edges = np.array(edges, dtype=np.int32)
@@ -755,7 +759,8 @@ class  KTPFormer(nn.Module):
         if istrain:
             # return predicted_3d_pos
             training_feat = {
-                            "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d },        # 键名要等于 cfg.LOSS[*].log_prefix
+                            # "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d },        
+                            "mpjpe": { "pred": predicted_3d_pos, "gt": inputs_3d, "boneindex": self.boneindex},        # 键名要等于 cfg.LOSS[*].log_prefix
                         }
             return training_feat
         else:

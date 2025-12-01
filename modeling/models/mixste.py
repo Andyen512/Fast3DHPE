@@ -289,7 +289,7 @@ class  MixSTE(nn.Module):
     def __init__(self, num_frame=9, num_joints=17, in_chans=2, embed_dim_ratio=32, depth=4,
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None, 
-                 joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
+                 boneindextemp=None, joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
         super().__init__()  
 
         self.model_pos = MixSTE2(num_frame, num_joints, in_chans, embed_dim_ratio, depth,
@@ -297,6 +297,10 @@ class  MixSTE(nn.Module):
                         drop_rate, attn_drop_rate, drop_path_rate,  norm_layer)
         self.joints_left = joints_left
         self.joints_right = joints_right
+        boneindextemp = boneindextemp.split(',')
+        self.boneindex = []
+        for i in range(0,len(boneindextemp),2):
+            self.boneindex.append([int(boneindextemp[i]), int(boneindextemp[i+1])])
         self.rootidx = rootidx
         
         
@@ -315,6 +319,7 @@ class  MixSTE(nn.Module):
             # return predicted_3d_pos
             training_feat = {
                             "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d },        # 键名要等于 cfg.LOSS[*].log_prefix
+                            "mpjpe": { "pred": predicted_3d_pos, "gt": inputs_3d, "boneindex": self.boneindex},
                         }
             return training_feat
         else:

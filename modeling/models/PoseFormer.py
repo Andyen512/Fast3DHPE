@@ -160,16 +160,19 @@ class  PoseFormer_backbone(nn.Module):
 class  PoseFormer(nn.Module):
     def __init__(self, num_frame=9, num_joints=17, in_chans=2, embed_dim_ratio=32, depth=4,
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
-                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  number_of_kept_frames=3, number_of_kept_coeffs=3,
-                 norm_layer=None, joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
+                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2, norm_layer=None, is_train=True, 
+                 boneindextemp=None, joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
         super().__init__()  
 
         self.model_pos = PoseFormer_backbone(num_frame, num_joints, in_chans, embed_dim_ratio, depth,
                         num_heads, mlp_ratio, qkv_bias, qk_scale, drop_rate, attn_drop_rate, drop_path_rate, norm_layer)
         self.joints_left = joints_left
         self.joints_right = joints_right
+        boneindextemp = boneindextemp.split(',')
+        self.boneindex = []
+        for i in range(0,len(boneindextemp),2):
+            self.boneindex.append([int(boneindextemp[i]), int(boneindextemp[i+1])])
         self.rootidx = rootidx
-        
         
     def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False, inputs_act=None):
         predicted_3d_pos = self.model_pos(inputs_2d)
@@ -181,11 +184,12 @@ class  PoseFormer(nn.Module):
             # for i in range(predicted_3d_pos.shape[0]):
             #     predicted_3d_pos[i,:,:,:] = (predicted_3d_pos[i,:,:,:] + predicted_3d_pos_flip[i,:,:,:])/2
             predicted_3d_pos = (predicted_3d_pos + predicted_3d_pos_flip) / 2
-        
+        set_trace()
         if istrain:
             # return predicted_3d_pos
             training_feat = {
-                            "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d },        # 键名要等于 cfg.LOSS[*].log_prefix
+                            # "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d },        
+                            "mpjpe": { "pred": predicted_3d_pos, "gt": inputs_3d, "boneindex": self.boneindex}, 
                         }
             return training_feat
         else:
