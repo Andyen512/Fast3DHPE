@@ -237,10 +237,12 @@ def fetch_actions(actions, keypoints, dataset, downsample=1):
     out_poses_3d = []
     out_poses_2d = []
     out_camera_params = []
+    out_action = []
     for subject, action in actions:
         poses_2d = keypoints[subject][action]
         for i in range(len(poses_2d)): # Iterate across cameras
             out_poses_2d.append(poses_2d[i])
+            out_action.append(action)
 
         poses_3d = dataset[subject][action]['positions_3d']
         assert len(poses_3d) == len(poses_2d), 'Camera count mismatch'
@@ -262,7 +264,7 @@ def fetch_actions(actions, keypoints, dataset, downsample=1):
             if out_poses_3d is not None:
                 out_poses_3d[i] = out_poses_3d[i][::stride]
 
-    return out_camera_params, out_poses_3d, out_poses_2d
+    return out_camera_params, out_poses_3d, out_poses_2d, out_action
 
 def build_data_bundle_test_H36M(cfg, kps_left, kps_right, joints_left, joints_right, dataset, keypoints, actions, action_filter=None, training=False, PoseUnchunkedDataset=None):
     test_bundle_list = []
@@ -276,8 +278,8 @@ def build_data_bundle_test_H36M(cfg, kps_left, kps_right, joints_left, joints_ri
             if not found:
                 continue
 
-        cameras_act, poses_act, poses_2d_act = fetch_actions(actions[action_key], keypoints, dataset)
-        act_dataset = PoseUnchunkedDataset(poses_2d_act, poses_act, cameras_act,
+        cameras_act, poses_act, poses_2d_act, action = fetch_actions(actions[action_key], keypoints, dataset)
+        act_dataset = PoseUnchunkedDataset(poses_2d_act, poses_act, cameras_act, action,
                                         pad=(cfg["DATASET"]["receptive_field"] - cfg["DATASET"]["chunk_size"]) // 2, 
                                         causal_shift=0, augment=True,
                                         kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
