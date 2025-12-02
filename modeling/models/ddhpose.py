@@ -284,7 +284,7 @@ class DDHPose(nn.Module):
 
         return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
 
-    def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False):
+    def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False, inputs_act=None):
         self.is_train = istrain
         # Prepare Proposals.
         if not self.is_train:
@@ -310,7 +310,9 @@ class DDHPose(nn.Module):
 
             # return pred_pose
             training_feat = {
-                            "mpjpe": { "pred": pred_pose, "gt": inputs_3d, "boneindex": self.boneindex},        # 键名要等于 cfg.LOSS[*].log_prefix
+                            "mpjpe": { "pred": pred_pose, "target": inputs_3d},        
+                            "dis_mpjpe": { "pred": pred_pose, "target": inputs_3d, "boneindex": self.boneindex}, 
+                            "diff_mpjpe": { "pred": pred_pose, "target": inputs_3d},   
                         }
             return training_feat
 

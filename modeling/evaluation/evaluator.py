@@ -105,8 +105,8 @@ def evaluate( cfg,
             logger=None):
     
     model_cfg = cfg['MODEL']
-    model_name = model_cfg['name']
-    if model_name in ['DDHPose','D3DP','FinePOSE']:
+    eval_type = cfg['Test']['Eval_type']
+    if eval_type == 'JPMA':
         p1_dict = {
             'epoch_loss_3d_pos': torch.zeros(model_cfg['backbone']['sampling_timesteps']).cuda(),
             'epoch_loss_3d_pos_h': torch.zeros(model_cfg['backbone']['sampling_timesteps']).cuda(),
@@ -119,7 +119,7 @@ def evaluate( cfg,
             'epoch_loss_3d_pos_mean_p2': torch.zeros(model_cfg['backbone']['sampling_timesteps']),
             'epoch_loss_3d_pos_select_p2': torch.zeros(model_cfg['backbone']['sampling_timesteps'])
         }
-    elif model_name == 'MixSTE':
+    elif eval_type == 'Normal':
         p1_dict = {
             'epoch_loss_3d_pos': torch.zeros(1).cuda(),
             'epoch_loss_3d_pos_procrustes': torch.zeros(1).cuda(),
@@ -202,9 +202,9 @@ def evaluate( cfg,
                     predicted_3d_pos_single = model_eval(inputs_2d=inputs_2d_single, inputs_3d=inputs_3d_single, input_2d_flip=inputs_2d_flip_single, istrain=False, inputs_act=inputs_act) #b, t, h, f, j, c
                     predicted_3d_pos_single[..., root_idx, :] = 0
 
-                    if model_name in ['DDHPose','D3DP','FinePOSE']:
+                    if eval_type == 'JPMA':
                         report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
-                    elif model_name == 'MixSTE':
+                    elif eval_type == 'Normal':
                         report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict)
 
                     
@@ -240,9 +240,9 @@ def evaluate( cfg,
                     predicted_3d_pos_single[..., root_idx:root_idx+1, :] = 0
                     inputs_3d[..., root_idx:root_idx+1, :] = 0
 
-                    if model_name in ['DDHPose','D3DP']:
+                    if eval_type == 'JPMA':
                         report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
-                    elif model_name == 'MixSTE':
+                    elif eval_type == 'Normal':
                         report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d, p1_dict)
                         B, F, J, C = predicted_3d_pos_single.shape
                         num_poses = B * F
@@ -268,7 +268,7 @@ def evaluate( cfg,
         else:
             logger.info("----%s----", action)
 
-    if model_name in ['DDHPose','D3DP','FinePOSE']:
+    if eval_type == 'JPMA':
         e1 = (p1_dict['epoch_loss_3d_pos'] / N)*1000
         e1_h = (p1_dict['epoch_loss_3d_pos_h'] / N) * 1000
         e1_mean = (p1_dict['epoch_loss_3d_pos_mean'] / N) * 1000
@@ -300,7 +300,7 @@ def evaluate( cfg,
             return e1, e1_h, e1_mean, e1_select, e2, e2_h, e2_mean, e2_select
         else:
             return e1, e1_h, e1_mean, e1_select
-    elif model_name == 'MixSTE':
+    elif eval_type == 'Normal':
         e1 = (p1_dict['epoch_loss_3d_pos'] / N)*1000
         e2 = (p1_dict['epoch_loss_3d_pos_procrustes'] / N)*1000
         e3 = (p1_dict['epoch_loss_3d_pos_scale'] / N)*1000

@@ -10,12 +10,15 @@ DATASET:
   downsample: 1                  # 全局下采样因子
   eval_stride: 243               # 测试时滑窗步长（整段一窗）
   subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
-  number_of_frames: 243
+  receptive_field: 243
+  chunk_size: 243
   batch_size: 768
   stride: 243
   Root_idx: 0
   Cross_Dataset: False
   test_dataset: H36M
+  dataset_type: 'seq2seq'
+  frame_stride: 1
 
   Test:
     actions: '*'   
@@ -46,15 +49,22 @@ MODEL:
 
 # ========= 损失 =========
 LOSS:
-  type: "Dis_MPJPELoss"
-  log_prefix: "dis_mpjpe"
-  loss_term_weight: 1.0
-  boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
+  - type: "MPJPELoss"
+    log_prefix: "mpjpe"
+    loss_term_weight: 1.0
+  - type: "Dis_MPJPELoss"
+    log_prefix: "dis_mpjpe"
+    loss_term_weight: 1.0
+    boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
+  - type: "TemporalConsistencyLoss"
+    log_prefix: "diff_mpjpe"
+    loss_term_weight: 1.0
+    dataset: "H36M"
 
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00025
+  lr: 0.00024
   weight_decay: 0.1
   lr_decay: 0.990
 
@@ -65,7 +75,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_ddhpose2_lr00025_lrd990_2_torch23"    # 保存路径的一部分
+  save_name: "h36m_ddhpose2_lr00025_lrd990_2_torch23_pos_dis_diffloss"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: false
   log_interval: 50

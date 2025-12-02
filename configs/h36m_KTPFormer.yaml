@@ -94,5 +94,5 @@ ENGINE:
 RUNTIME:
   seed: 1
 
-DEBUG: False
+DEBUG: True
 EVAL: True

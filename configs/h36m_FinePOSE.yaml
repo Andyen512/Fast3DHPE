@@ -67,7 +67,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_FinePOSE_lr00012_lrd990"    # 保存路径的一部分
+  save_name: "h36m_FinePOSE_lr00015_lrd993_torch23"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: True
   log_interval: 50

@@ -157,7 +157,7 @@ class Trainer:
                 
 
                 bs, ts = inputs_3d.shape[0], inputs_3d.shape[1]
-                epoch_loss_3d_train     += (bs * ts) * loss_info["loss_total"].detach().float().item()
+                epoch_loss_3d_train     += (bs * ts) * loss_total.detach().float().item()
                 epoch_loss_3d_pos_train += (bs * ts) * loss_info["loss_3d_pos"].detach().float().item()
                 N += (bs * ts)
 
@@ -181,7 +181,7 @@ class Trainer:
                 local_cnt = torch.zeros(1, device=device, dtype=torch.float32)
 
                 with torch.inference_mode():
-                    for cam, batch_3d, batch_2d, batch_act in val_loader:
+                    for cam, batch_3d, batch_2d, _, batch_act in val_loader:
                         if cam is not None:
                             cam = cam.float()
                         inputs_3d = batch_3d.float()
@@ -252,7 +252,7 @@ class Trainer:
                             )
                         )
 
-                if epoch % self.cfg["ENGINE"]["save_freq"] == 0:
+                if epoch != 0 and epoch % self.cfg["ENGINE"]["save_freq"] == 0:
                     # 周期性保存
                     save_checkpoint(model, self.optimizer, self.scheduler,
                                     self.cfg, self.out_dir, epoch, metric=last_valid * 1000, 
@@ -271,7 +271,7 @@ class Trainer:
 
 
     def test(self, cfg, model, bundle_list, ckpt_path=None):
-        model_name = cfg["MODEL"]["name"]
+        eval_type = cfg["Test"]["Eval_type"]
         if self.optimizer is None:
             self.optimizer = self._build_optim(model)
 
@@ -285,7 +285,7 @@ class Trainer:
             if 'optimizer' in checkpoint and checkpoint['optimizer'] is not None:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
 
-        if model_name in ['DDHPose','D3DP','FinePOSE']:
+        if eval_type == 'JPMA':
             errors_p1 = []
             errors_p1_h = []
             errors_p1_mean = []
@@ -295,7 +295,7 @@ class Trainer:
             errors_p2_h = []
             errors_p2_mean = []
             errors_p2_select = []
-        elif model_name == 'MixSTE':
+        elif eval_type == 'Normal':
             errors_p1 = []
             errors_p2 = []
             errors_p3 = []
@@ -322,7 +322,7 @@ class Trainer:
                     self.logger.info("train_loader is None — fill datasets/builder.py to enable training.")
                 return
 
-            if model_name in ['DDHPose','D3DP','FinePOSE']:
+            if eval_type == 'JPMA':
                 if cfg['DATASET']['Test']['P2']:
                     e1, e1_h, e1_mean, e1_select, e2, e2_h, e2_mean, e2_select = evaluate(cfg, test_loader, model_pos=model , 
                                                         kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, 
@@ -343,7 +343,7 @@ class Trainer:
                     errors_p2_mean.append(e2_mean)
                     errors_p2_select.append(e2_select)
 
-            elif model_name == 'MixSTE':
+            elif eval_type == 'Normal':
                 e1, e2, e3, ev = evaluate(cfg, test_loader, model_pos=model ,kps_left=kps_left, 
                                         kps_right=kps_right, joints_left=joints_left, 
                                         joints_right=joints_right, action=action_key, logger=self.logger)   
@@ -352,7 +352,7 @@ class Trainer:
                 errors_p3.append(e3)
                 errors_vel.append(ev)
 
-        if model_name in ['DDHPose','D3DP','FinePOSE']:
+        if eval_type == 'JPMA':
             errors_p1 = torch.stack(errors_p1)
             errors_p1_actionwise = torch.mean(errors_p1, dim=0)
             errors_p1_h = torch.stack(errors_p1_h)
@@ -392,7 +392,7 @@ class Trainer:
                                 ii, errors_p2_actionwise_mean[ii].item())
                         self.logger.info("step %d Protocol #2 (MPJPE) action-wise average J_Agg:  %.4f mm",
                                 ii, errors_p2_actionwise_select[ii].item())
-        elif model_name == 'MixSTE':
+        elif eval_type == 'Normal':
             self.logger.info('Protocol #1   (MPJPE) action-wise average: %.1f mm', torch.mean(torch.stack(errors_p1)).item())
             self.logger.info('Protocol #2 (P-MPJPE) action-wise average: %.1f mm', torch.mean(torch.stack(errors_p2)).item())
             self.logger.info('Protocol #3 (N-MPJPE) action-wise average: %.1f mm', torch.mean(torch.stack(errors_p3)).item())
