@@ -6,18 +6,16 @@ DATASET:
   subjects_train: "S1,S5,S6,S7,S8"   # 训练 subject
   subjects_unlabeled:  ""           # 测试 subject
   subjects_test: "S9,S11"             # 半监督用的（可空）
-  seq_len: 243                   # 每个 clip 的帧数
   downsample: 1                  # 全局下采样因子
-  eval_stride: 243               # 测试时滑窗步长（整段一窗）
   subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
-  receptive_field: 243
-  chunk_size: 243
-  batch_size: 768
-  stride: 243
+  receptive_field: 81
+  chunk_size: 1
+  batch_size: 512
+  stride: 1
   Root_idx: 0
   Cross_Dataset: False
   test_dataset: H36M
-  dataset_type: 'seq2seq'
+  dataset_type: 'seq2frame'
   frame_stride: 1
 
 
@@ -29,7 +27,7 @@ DATASET:
 MODEL:
   name: "PoseFormer"
   backbone:
-    num_frame: 243   # 对齐数据长度
+    num_frame: 81   # 对齐数据长度
     num_joints: 17
     in_chans: 2                     # 输入通道（2D坐标 → x,y）
     embed_dim_ratio: 32
@@ -43,10 +41,13 @@ MODEL:
 
 # ========= 损失 =========
 LOSS:
-  type: "Dis_MPJPELoss"
-  log_prefix: "mpjpe"
-  loss_term_weight: 1.0
-  boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
+  - type: "MPJPELoss"
+    log_prefix: "mpjpe"
+    loss_term_weight: 1.0
+  - type: "Dis_MPJPELoss"
+    log_prefix: "dis_mpjpe"
+    loss_term_weight: 1.0
+    boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
 
 
 

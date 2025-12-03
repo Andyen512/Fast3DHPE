@@ -18,6 +18,8 @@ DATASET:
   Root_idx: 0
   Cross_Dataset: False
   test_dataset: H36M
+  dataset_type: 'seq2frame'
+  frame_stride: 1
 
   Test:
     actions: '*'   

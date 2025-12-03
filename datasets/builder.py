@@ -340,9 +340,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
     ds_cfg = cfg["DATASET"]
     subset       = float(ds_cfg.get("subset", 1.0))
     downsample   = int(ds_cfg.get("downsample", 1))   # 全局下采样
-    T            = int(ds_cfg.get("seq_len", 243))
-    # 组装 Dataset & DataLoader
-    # 注意：OpenGait 风格是 DDP 分布式采样器
+
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
     receptive_field = ds_cfg["receptive_field"]

@@ -49,7 +49,7 @@ class MPJPELoss(nn.Module):
             diff = (pred - target) * self.scale     # [B,T,J,3]
             dist = diff.norm(dim=-1)                # [B,T,J]
 
-            loss_3d_pos = dist.mean(dim=-1)  # [B,T]
+            loss_3d_pos = dist.mean()  # [B,T]
             # ---- apply joint weight if enabled ----
             if self.use_weight:
                 if self.joint_weight is None:

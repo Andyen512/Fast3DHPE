@@ -149,6 +149,7 @@ class PoseChunkDataset_H36M(Dataset):
                 if flip:
                     cam[2] *= -1
                     cam[7] *= -1
+
             return cam, chunk_3d, chunk_2d, self.action[seq_i]
      
 

@@ -184,12 +184,14 @@ class  PoseFormer(nn.Module):
             # for i in range(predicted_3d_pos.shape[0]):
             #     predicted_3d_pos[i,:,:,:] = (predicted_3d_pos[i,:,:,:] + predicted_3d_pos_flip[i,:,:,:])/2
             predicted_3d_pos = (predicted_3d_pos + predicted_3d_pos_flip) / 2
-        set_trace()
+        
         if istrain:
             # return predicted_3d_pos
+
             training_feat = {
-                            # "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d },        
-                            "mpjpe": { "pred": predicted_3d_pos, "gt": inputs_3d, "boneindex": self.boneindex}, 
+                            "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d},        
+                            "dis_mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d, "boneindex": self.boneindex}, 
+                            # "diff_mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d},   
                         }
             return training_feat
         else:

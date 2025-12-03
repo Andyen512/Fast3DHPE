@@ -70,9 +70,9 @@ LOSS:
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00014
+  lr: 0.00025
   weight_decay: 0.1
-  lr_decay: 0.993
+  lr_decay: 0.990
 
 SCHED:
   name: "Cosine"
@@ -81,7 +81,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_KTPFormer_lr00014_lrd993_2_posweight_dis_diffloss"    # 保存路径的一部分
+  save_name: "h36m_KTPFormer_lr00025_lrd990_2_posweight_dis_diffloss"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: false
   log_interval: 50
