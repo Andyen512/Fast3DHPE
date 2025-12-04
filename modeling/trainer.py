@@ -271,7 +271,7 @@ class Trainer:
 
 
     def test(self, cfg, model, bundle_list, ckpt_path=None):
-        eval_type = cfg["Test"]["Eval_type"]
+        eval_type = cfg["DATASET"]["Test"]["Eval_type"]
         if self.optimizer is None:
             self.optimizer = self._build_optim(model)
 

@@ -24,7 +24,7 @@ DATASET:
   Test:
     actions: '*'   
     P2: True     
-    Eval_type: 'JPMA'    
+    Eval_type: 'Normal'    
 
 # ========= 模型部分 =========
 MODEL:

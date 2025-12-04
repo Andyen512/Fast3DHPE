@@ -5,39 +5,75 @@ from .eval_utils import *
 import os
 from modeling.dist import is_main_process
 
-def eval_data_prepare(receptive_field, inputs_2d, inputs_3d):
+def eval_data_prepare(dataset_type, receptive_field, inputs_2d, inputs_3d):
 
-    assert inputs_2d.shape[:-1] == inputs_3d.shape[:-1], "2d and 3d inputs shape must be same! "+str(inputs_2d.shape)+str(inputs_3d.shape)
-    inputs_2d_p = torch.squeeze(inputs_2d)
-    inputs_3d_p = torch.squeeze(inputs_3d)
+    # ----------- 公共部分 -----------
+    assert inputs_2d.shape[:-1] == inputs_3d.shape[:-1], \
+        "2d and 3d inputs shape must be same! "+str(inputs_2d.shape)+str(inputs_3d.shape)
 
-    if inputs_2d_p.shape[0] / receptive_field > inputs_2d_p.shape[0] // receptive_field: 
-        out_num = inputs_2d_p.shape[0] // receptive_field+1
-    elif inputs_2d_p.shape[0] / receptive_field == inputs_2d_p.shape[0] // receptive_field:
-        out_num = inputs_2d_p.shape[0] // receptive_field
+    inputs_2d_p = torch.squeeze(inputs_2d)   # [T,17,2]
+    inputs_3d_p = torch.squeeze(inputs_3d)   # [T,17,3]
+    T = inputs_2d_p.shape[0]
 
-    eval_input_2d = torch.empty(out_num, receptive_field, inputs_2d_p.shape[1], inputs_2d_p.shape[2])
-    eval_input_3d = torch.empty(out_num, receptive_field, inputs_3d_p.shape[1], inputs_3d_p.shape[2])
+    # ============================================================
+    #   A) seq2frame 模式：输入 RF 帧，输出中心帧（标准 PoseFormer）
+    # ============================================================
+    if dataset_type == "seq2frame":
+        out_num = T - receptive_field + 1
 
-    for i in range(out_num-1):
-        eval_input_2d[i,:,:,:] = inputs_2d_p[i*receptive_field:i*receptive_field+receptive_field,:,:]
-        eval_input_3d[i,:,:,:] = inputs_3d_p[i*receptive_field:i*receptive_field+receptive_field,:,:]
-    if inputs_2d_p.shape[0] < receptive_field:
-        from torch.nn import functional as F
-        pad_right = receptive_field-inputs_2d_p.shape[0]
-        inputs_2d_p = rearrange(inputs_2d_p, 'b f c -> f c b')        
-        inputs_2d_p = F.pad(inputs_2d_p, (0,pad_right), mode='replicate')
-        # inputs_2d_p = np.pad(inputs_2d_p, ((0, receptive_field-inputs_2d_p.shape[0]), (0, 0), (0, 0)), 'edge')
-        inputs_2d_p = rearrange(inputs_2d_p, 'f c b -> b f c')
-    if inputs_3d_p.shape[0] < receptive_field:
-        pad_right = receptive_field-inputs_3d_p.shape[0]
-        inputs_3d_p = rearrange(inputs_3d_p, 'b f c -> f c b')
-        inputs_3d_p = F.pad(inputs_3d_p, (0,pad_right), mode='replicate')
-        inputs_3d_p = rearrange(inputs_3d_p, 'f c b -> b f c')
-    eval_input_2d[-1,:,:,:] = inputs_2d_p[-receptive_field:,:,:]
-    eval_input_3d[-1,:,:,:] = inputs_3d_p[-receptive_field:,:,:]
+        eval_input_2d = torch.empty(out_num, receptive_field, inputs_2d_p.shape[1], inputs_2d_p.shape[2])
+        eval_input_3d = torch.empty(out_num, 1, inputs_3d_p.shape[1], inputs_3d_p.shape[2])
 
-    return eval_input_2d, eval_input_3d
+        for i in range(out_num):
+            # 2D: sliding window
+            eval_input_2d[i] = inputs_2d_p[i:i+receptive_field]
+
+            # 3D: 中心帧监督
+            center = i + receptive_field // 2
+            eval_input_3d[i] = inputs_3d_p[center:center+1]
+
+        return eval_input_2d, eval_input_3d
+
+
+    # ============================================================
+    #   B) seq2seq 模式：保持你原来的 chunked seq2seq（不动）
+    # ============================================================
+    else:
+        # ---- 你的原始 seq2seq 逻辑，从这里开始完全不改 ----
+
+        if inputs_2d_p.shape[0] / receptive_field > inputs_2d_p.shape[0] // receptive_field: 
+            out_num = inputs_2d_p.shape[0] // receptive_field + 1
+        else:
+            out_num = inputs_2d_p.shape[0] // receptive_field
+
+        eval_input_2d = torch.empty(out_num, receptive_field, inputs_2d_p.shape[1], inputs_2d_p.shape[2])
+        eval_input_3d = torch.empty(out_num, receptive_field, inputs_3d_p.shape[1], inputs_3d_p.shape[2])
+
+        # 非重叠 chunk
+        for i in range(out_num-1):
+            eval_input_2d[i] = inputs_2d_p[i*receptive_field : i*receptive_field+receptive_field]
+            eval_input_3d[i] = inputs_3d_p[i*receptive_field : i*receptive_field+receptive_field]
+
+        # 长度不足 RF → pad
+        if inputs_2d_p.shape[0] < receptive_field:
+            from torch.nn import functional as F
+            pad_right = receptive_field - inputs_2d_p.shape[0]
+            inputs_2d_p = rearrange(inputs_2d_p, 'b f c -> f c b')
+            inputs_2d_p = F.pad(inputs_2d_p, (0,pad_right), mode='replicate')
+            inputs_2d_p = rearrange(inputs_2d_p, 'f c b -> b f c')
+
+        if inputs_3d_p.shape[0] < receptive_field:
+            pad_right = receptive_field - inputs_3d_p.shape[0]
+            inputs_3d_p = rearrange(inputs_3d_p, 'b f c -> f c b')
+            inputs_3d_p = F.pad(inputs_3d_p, (0,pad_right), mode='replicate')
+            inputs_3d_p = rearrange(inputs_3d_p, 'f c b -> b f c')
+
+        # 最后一个 clip → 尾部对齐
+        eval_input_2d[-1] = inputs_2d_p[-receptive_field:]
+        eval_input_3d[-1] = inputs_3d_p[-receptive_field:]
+
+        return eval_input_2d, eval_input_3d
+
 
 # ---------- DDHPOSE 输出与返回 ----------
 def report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=None, cam_data=None):
@@ -105,7 +141,7 @@ def evaluate( cfg,
             logger=None):
     
     model_cfg = cfg['MODEL']
-    eval_type = cfg['Test']['Eval_type']
+    eval_type = cfg["DATASET"]['Test']['Eval_type']
     if eval_type == 'JPMA':
         p1_dict = {
             'epoch_loss_3d_pos': torch.zeros(model_cfg['backbone']['sampling_timesteps']).cuda(),
@@ -173,8 +209,8 @@ def evaluate( cfg,
 
                 ##### convert size
                 inputs_3d_p = inputs_3d
-                inputs_2d, inputs_3d = eval_data_prepare(cfg['DATASET']['chunk_size'], inputs_2d, inputs_3d_p)
-                inputs_2d_flip, _ = eval_data_prepare(cfg['DATASET']['chunk_size'], inputs_2d_flip, inputs_3d_p)
+                inputs_2d, inputs_3d = eval_data_prepare(cfg['DATASET']['dataset_type'], cfg['DATASET']['receptive_field'], inputs_2d, inputs_3d_p)
+                inputs_2d_flip, _ = eval_data_prepare(cfg['DATASET']['dataset_type'], cfg['DATASET']['receptive_field'], inputs_2d_flip, inputs_3d_p)
                 
                 if torch.cuda.is_available():
                     inputs_2d = inputs_2d.cuda()
@@ -184,38 +220,48 @@ def evaluate( cfg,
 
                 inputs_traj = inputs_3d[..., root_idx:root_idx+1, :].clone()
                 inputs_3d[..., root_idx, :] = 0
-                bs = cfg['DATASET']['batch_size']
-                total_batch = (inputs_3d.shape[0] + bs - 1) // bs
 
-                for batch_cnt in range(total_batch):
-                    if (batch_cnt + 1) * bs > inputs_3d.shape[0]:
-                        inputs_2d_single = inputs_2d[batch_cnt * bs:]
-                        inputs_2d_flip_single = inputs_2d_flip[batch_cnt * bs:]
-                        inputs_3d_single = inputs_3d[batch_cnt * bs:]
-                        inputs_traj_single = inputs_traj[batch_cnt * bs:]
-                    else:
-                        inputs_2d_single = inputs_2d[batch_cnt * bs:(batch_cnt+1) * bs]
-                        inputs_2d_flip_single = inputs_2d_flip[batch_cnt * bs:(batch_cnt+1) * bs]
-                        inputs_3d_single = inputs_3d[batch_cnt * bs:(batch_cnt+1) * bs]
-                        inputs_traj_single = inputs_traj[batch_cnt * bs:(batch_cnt + 1) * bs]
+                if cfg['DATASET']['dataset_type'] == 'seq2seq':
+                    bs = cfg['DATASET']['batch_size']
+                    total_batch = (inputs_3d.shape[0] + bs - 1) // bs
+                    for batch_cnt in range(total_batch):
+                        if (batch_cnt + 1) * bs > inputs_3d.shape[0]:
+                            inputs_2d_single = inputs_2d[batch_cnt * bs:]
+                            inputs_2d_flip_single = inputs_2d_flip[batch_cnt * bs:]
+                            inputs_3d_single = inputs_3d[batch_cnt * bs:]
+                            inputs_traj_single = inputs_traj[batch_cnt * bs:]
+                        else:
+                            inputs_2d_single = inputs_2d[batch_cnt * bs:(batch_cnt+1) * bs]
+                            inputs_2d_flip_single = inputs_2d_flip[batch_cnt * bs:(batch_cnt+1) * bs]
+                            inputs_3d_single = inputs_3d[batch_cnt * bs:(batch_cnt+1) * bs]
+                            inputs_traj_single = inputs_traj[batch_cnt * bs:(batch_cnt + 1) * bs]
 
-                    predicted_3d_pos_single = model_eval(inputs_2d=inputs_2d_single, inputs_3d=inputs_3d_single, input_2d_flip=inputs_2d_flip_single, istrain=False, inputs_act=inputs_act) #b, t, h, f, j, c
+                        predicted_3d_pos_single = model_eval(inputs_2d=inputs_2d_single, inputs_3d=inputs_3d_single, input_2d_flip=inputs_2d_flip_single, istrain=False, inputs_act=inputs_act) #b, t, h, f, j, c
+                        predicted_3d_pos_single[..., root_idx, :] = 0
+
+                        if eval_type == 'JPMA':
+                            report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
+                        elif eval_type == 'Normal':
+                            report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict)
+                        N += inputs_3d_single.shape[0] * inputs_3d_single.shape[1]
+
+                        if quickdebug:
+                            if N == inputs_3d_single.shape[0] * inputs_3d_single.shape[1]:
+                                break
+                else:
+                    predicted_3d_pos_single = model_eval(inputs_2d=inputs_2d, inputs_3d=inputs_3d, input_2d_flip=inputs_2d_flip, istrain=False, inputs_act=inputs_act) #b, t, h, f, j, c
                     predicted_3d_pos_single[..., root_idx, :] = 0
-
                     if eval_type == 'JPMA':
-                        report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
+                        report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj, inputs_3d, inputs_2d_flip, cam, p1_dict, p2_dict, proj_func=reproject_func, cam_data=cam_data)
                     elif eval_type == 'Normal':
-                        report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict)
+                        report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d, p1_dict)
 
-                    
-                    N += inputs_3d_single.shape[0] * inputs_3d_single.shape[1]
+                    N += inputs_3d.shape[0] 
 
                     if quickdebug:
-                        if N == inputs_3d_single.shape[0] * inputs_3d_single.shape[1]:
+                        if N == inputs_3d_single.shape[0]:
                             break
-                if quickdebug:
-                    if N == inputs_3d_single.shape[0] * inputs_3d_single.shape[1]:
-                        break
+
         else:
             sum_p1, sum_p2, sum_pck, sum_auc = 0.0, 0.0, 0.0, 0.0
             total_poses = 0

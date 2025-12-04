@@ -33,27 +33,26 @@ MODEL:
     num_block: 6
     d_time: 1
     num_joints: 17
-    embed_dim_ratio: 256
+    embed_dim_ratio: 512
 
     
     
 
 # ========= 损失 =========
 LOSS:
-  type: "MPJPELoss"
-  log_prefix: "mpjpe"
-  loss_term_weight: 1.0
-
-LOSS_EVAL:
-  type: "MPJPELoss"
-  log_prefix: "mpjpe"
-  loss_term_weight: 1.0
+  - type: "MPJPELoss"
+    log_prefix: "mpjpe"
+    loss_term_weight: 1.0
+  # - type: "Dis_MPJPELoss"
+  #   log_prefix: "dis_mpjpe"
+  #   loss_term_weight: 1.0
+  #   boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
 
 
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00012
+  lr: 0.00025
   weight_decay: 0.1
   lr_decay: 0.990
 
@@ -64,7 +63,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_STCFormer_lr00012_lrd990"    # 保存路径的一部分
+  save_name: "h36m_STCFormer_lr00025_lrd990_dismpjpe_torch23"   
   amp: true                    # 自动混合精度
   find_unused_parameters: False
   log_interval: 50

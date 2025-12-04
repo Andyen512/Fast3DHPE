@@ -197,6 +197,7 @@ class PoseUnchunkedDataset_H36M(Dataset):
         if self.poses_3d is not None:
             seq_3d = self.poses_3d[idx]
             chunk_3d = np.expand_dims(seq_3d, axis=0)
+        
         cam = None
         if self.cameras is not None:
             cam = np.expand_dims(self.cameras[idx], axis=0)
@@ -306,4 +307,4 @@ class PoseUnchunkedDataset_H36M(Dataset):
 #                 chunk_2d[1, :, self.kps_right + self.kps_left]
 
 #         act = None if self.action is None else self.action[idx]
-#         return cam, chunk_3d, chunk_2d, act
+#         return cam, chunk_3d, chunk_2d, None, act

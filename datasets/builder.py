@@ -280,7 +280,7 @@ def build_data_bundle_test_H36M(cfg, kps_left, kps_right, joints_left, joints_ri
 
         cameras_act, poses_act, poses_2d_act, action = fetch_actions(actions[action_key], keypoints, dataset)
         act_dataset = PoseUnchunkedDataset(poses_2d_act, poses_act, cameras_act, action,
-                                        pad=(cfg["DATASET"]["receptive_field"] - cfg["DATASET"]["chunk_size"]) // 2, 
+                                        pad=0, 
                                         causal_shift=0, augment=True,
                                         kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
                                         joints_right=joints_right)
