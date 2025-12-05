@@ -35,8 +35,8 @@ MODEL:
     mlp_ratio: 2.0
     qkv_bias: True
     drop_path_rate: 0.1
-    number_of_kept_frames: 27
-    number_of_kept_coeffs: 27
+    number_of_kept_frames: 3
+    number_of_kept_coeffs: 3
 
 
 
@@ -50,7 +50,7 @@ LOSS:
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00012
+  lr: 0.001
   weight_decay: 0.1
   lr_decay: 0.990
 
@@ -61,7 +61,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_PoseFormerV2_lr00012_lrd990"    # 保存路径的一部分
+  save_name: "h36m_PoseFormerV2_lr001_lrd990_f3_torch23"    
   amp: true                    # 自动混合精度
   find_unused_parameters: False
   log_interval: 50

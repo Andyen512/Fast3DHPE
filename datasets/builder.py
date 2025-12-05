@@ -383,7 +383,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
     
         train_dataset = ChunkDataset(poses_train_2d, poses_train, cameras_train, action_train,
                                 chunk_length=ds_cfg["chunk_size"],
-                                pad= (receptive_field - ds_cfg["chunk_size"]) // 2, 
+                                pad= (receptive_field - 1) // 2, 
                                 causal_shift=causal_shift,
                                 augment=True,
                                 kps_left=kps_left, kps_right=kps_right,

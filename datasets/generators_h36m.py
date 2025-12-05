@@ -15,14 +15,14 @@ class PoseChunkDataset_H36M(Dataset):
     def __init__(self, poses_2d, poses_3d=None, cameras=None, action=None,
                  chunk_length=1, pad=0, causal_shift=0, random_seed=1234,
                  augment=False, kps_left=None, kps_right=None, joints_left=None, joints_right=None,
-                 dataset_type= 'seq2frame', frame_stride=1):
+                 dataset_type= 'seq2frame', frame_stride=1, tds=1):
 
         self.poses_2d = poses_2d
         self.poses_3d = poses_3d
         self.cameras = cameras
         self.action = action
         self.chunk_length = chunk_length
-        self.pad = pad
+        self.pad = pad * tds
         self.causal_shift = causal_shift
         self.augment = augment
         self.kps_left = kps_left
@@ -32,6 +32,7 @@ class PoseChunkDataset_H36M(Dataset):
         self.random = np.random.RandomState(random_seed)
         self.dataset_type = dataset_type
         self.frame_stride = frame_stride
+        self.tds = tds
 
         self.pairs = []  # (seq_idx, start, end, flip)
 
@@ -48,7 +49,15 @@ class PoseChunkDataset_H36M(Dataset):
                 flip_flags = ~flip_flags
                 self.pairs += list(zip(np.full(len(bounds) - 1, i), bounds[:-1], bounds[1:], flip_flags))
 
-
+    def _pad_sequence(self, seq, start, end):
+        low = max(start, 0)
+        high = min(end, seq.shape[0])
+        pad_left = low - start
+        pad_right = end - high
+        chunk = seq[low:high]
+        if pad_left > 0 or pad_right > 0:
+            chunk = np.pad(chunk, ((pad_left, pad_right), (0, 0), (0, 0)), mode='edge')
+        return chunk
     def random_state(self):
         return self.random
     
@@ -61,8 +70,15 @@ class PoseChunkDataset_H36M(Dataset):
     def __getitem__(self, index):
         seq_i, start_3d, end_3d, flip = self.pairs[index]
         if self.dataset_type == 'seq2seq':
-            start_2d = start_3d
-            end_2d = end_3d
+            mid = (start_3d + end_3d) // 2
+
+            if self.tds == 1:
+                start_2d = start_3d
+                end_2d   = end_3d
+            else:
+                pad_eff = self.pad * self.tds
+                start_2d = mid - pad_eff
+                end_2d   = mid + pad_eff
 
             # ----------- 2D pose -------------
             seq_2d = np.asarray(self.poses_2d[seq_i])  # Ensure ndarray
@@ -154,15 +170,7 @@ class PoseChunkDataset_H36M(Dataset):
      
 
 
-    def _pad_sequence(self, seq, start, end):
-        low = max(start, 0)
-        high = min(end, seq.shape[0])
-        pad_left = low - start
-        pad_right = end - high
-        chunk = seq[low:high]
-        if pad_left > 0 or pad_right > 0:
-            chunk = np.pad(chunk, ((pad_left, pad_right), (0, 0), (0, 0)), mode='edge')
-        return chunk
+
 
 class PoseUnchunkedDataset_H36M(Dataset):
     def __init__(self, poses_2d, poses_3d=None, cameras=None, action=None,

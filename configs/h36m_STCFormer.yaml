@@ -17,7 +17,8 @@ DATASET:
   Cross_Dataset: False
   test_dataset: H36M
   dataset_type: 'seq2seq'
-  frame_stride: 1
+  frame_stride: 3
+  tds: 2
 
   Test:
     actions: '*'   
@@ -53,7 +54,7 @@ OPTIM:
   name: "AdamW"
   lr: 0.001
   weight_decay: 0.1
-  lr_decay: 0.96
+  lr_decay: 0.99
 
 SCHED:
   name: "Cosine"
