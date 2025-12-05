@@ -6,20 +6,18 @@ DATASET:
   subjects_train: "S1,S5,S6,S7,S8"   # 训练 subject
   subjects_unlabeled:  ""           # 测试 subject
   subjects_test: "S9,S11"             # 半监督用的（可空）
-  seq_len: 1                   # 每个 clip 的帧数
   downsample: 1                  # 全局下采样因子
-  train_stride: 81               # 训练时滑窗步长（例：81）
-  eval_stride: 243               # 测试时滑窗步长（整段一窗）
   subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
-  receptive_field: 243
-  chunk_size: 243
-  batch_size: 768
-  stride: 243
+  receptive_field: 351
+  chunk_size: 1
+  batch_size: 128
+  stride: 1
   Root_idx: 0
   Cross_Dataset: False
   test_dataset: H36M
-  dataset_type: 'seq2seq'
+  dataset_type: 'seq2frame'
   frame_stride: 1
+
 
   Test:
     actions: '*'   
@@ -29,7 +27,7 @@ DATASET:
 MODEL:
   name: "MHFormer"
   backbone:
-    num_frame: 243 
+    num_frame: 351 
     num_block: 3
     num_joints: 17
     embed_dim_ratio: 512
@@ -44,10 +42,6 @@ LOSS:
   log_prefix: "mpjpe"
   loss_term_weight: 1.0
 
-LOSS_EVAL:
-  type: "MPJPELoss"
-  log_prefix: "mpjpe"
-  loss_term_weight: 1.0
 
 
 # ========= 优化器 & 学习率 =========

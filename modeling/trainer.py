@@ -194,8 +194,8 @@ class Trainer:
 
                         # 尺寸转换
                         inputs_3d_p = inputs_3d
-                        inputs_2d, inputs_3d      = eval_data_prepare(receptive_field, inputs_2d, inputs_3d_p)
-                        inputs_2d_flip, _         = eval_data_prepare(receptive_field, inputs_2d_flip, inputs_3d_p)
+                        inputs_2d, inputs_3d      = eval_data_prepare(self.cfg['DATASET']['dataset_type'], receptive_field, inputs_2d, inputs_3d_p)
+                        inputs_2d_flip, _         = eval_data_prepare(self.cfg['DATASET']['dataset_type'], receptive_field, inputs_2d_flip, inputs_3d_p)
 
                         if torch.cuda.is_available():
                             inputs_3d = inputs_3d.cuda(non_blocking=True)

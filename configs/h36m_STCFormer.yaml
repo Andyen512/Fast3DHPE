@@ -8,8 +8,6 @@ DATASET:
   subjects_test: "S9,S11"             # 半监督用的（可空）
   seq_len: 1                   # 每个 clip 的帧数
   downsample: 1                  # 全局下采样因子
-  train_stride: 81               # 训练时滑窗步长（例：81）
-  eval_stride: 243               # 测试时滑窗步长（整段一窗）
   subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
   receptive_field: 243
   chunk_size: 243
@@ -24,6 +22,7 @@ DATASET:
   Test:
     actions: '*'   
     P2: True 
+    Eval_type: 'Normal' 
 
 # ========= 模型部分 =========
 MODEL:
@@ -52,9 +51,9 @@ LOSS:
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00025
+  lr: 0.001
   weight_decay: 0.1
-  lr_decay: 0.990
+  lr_decay: 0.96
 
 SCHED:
   name: "Cosine"
@@ -63,7 +62,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_STCFormer_lr00025_lrd990_dismpjpe_torch23"   
+  save_name: "h36m_STCFormer_lr001_lrd96_mpjpe_torch23"   
   amp: true                    # 自动混合精度
   find_unused_parameters: False
   log_interval: 50

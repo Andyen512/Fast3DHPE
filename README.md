@@ -1,1 +1,1 @@
-# FastPose3D
+# Fast3DHPE
