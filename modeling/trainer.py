@@ -86,6 +86,10 @@ class Trainer:
         self.best_rec = {"metric": float("inf"), "epoch": -1}
         self.training = None
 
+        # ----- AMP config -----
+        self.use_amp = cfg.get("ENGINE", {}).get("amp", True)  # or False if you want default off
+        self.scaler = GradScaler(enabled=self.use_amp)
+
     def _build_optim(self, model):
         opt_cfg = self.cfg.get("OPTIM", {})
         self.lr = opt_cfg.get("lr", 1e-4)
@@ -145,16 +149,29 @@ class Trainer:
 
                 inputs_3d[:, :, self.root_idx] = 0  # root 对齐
 
+                # self.optimizer.zero_grad(set_to_none=True)
+                # training_feat = model(inputs_2d, inputs_3d, None, self.training, inputs_act)
+                
+                # loss_total, loss_info = self.loss_agg(training_feat)
+                # loss_total.backward()
+                # self.optimizer.step()
+
                 self.optimizer.zero_grad(set_to_none=True)
-                training_feat = model(inputs_2d, inputs_3d, None, self.training, inputs_act)
-                
-                # with autocast(enabled=self.scaler.is_enabled()):
-                #     loss_total, loss_info = self.loss_agg(training_feat)
-                
-                loss_total, loss_info = self.loss_agg(training_feat)
-                loss_total.backward()
-                self.optimizer.step()
-                
+
+                # ----- forward & loss under autocast -----
+                with autocast(enabled=self.use_amp):
+                    training_feat = model(inputs_2d, inputs_3d, None, self.training, inputs_act)
+                    loss_total, loss_info = self.loss_agg(training_feat)
+
+                # ----- backward & step with / without AMP -----
+                if self.use_amp:
+                    self.scaler.scale(loss_total).backward()
+                    self.scaler.step(self.optimizer)
+                    self.scaler.update()
+                else:
+                    loss_total.backward()
+                    self.optimizer.step()
+
 
                 bs, ts = inputs_3d.shape[0], inputs_3d.shape[1]
                 epoch_loss_3d_train     += (bs * ts) * loss_total.detach().float().item()
@@ -203,13 +220,20 @@ class Trainer:
                             inputs_2d_flip = inputs_2d_flip.cuda(non_blocking=True)
               
                         inputs_3d[..., self.root_idx, :] = 0  # root 对齐
-                        pred_3d = model(inputs_2d, inputs_3d, inputs_2d_flip, self.training, inputs_act)
+                        # pred_3d = model(inputs_2d, inputs_3d, inputs_2d_flip, self.training, inputs_act)
 
-                        # ====== 损失计算（和训练时保持一致）======
+                        # # ====== 损失计算（和训练时保持一致）======
+                        # training_feat = {
+                        #     "mpjpe": {"pred": pred_3d, "target": inputs_3d}
+                        # }
+                        # loss_total, loss_info = self.loss_eval(training_feat)
+
+                        with autocast(enabled=self.use_amp):
+                            pred_3d = model(inputs_2d, inputs_3d, inputs_2d_flip, self.training, inputs_act)
+
                         training_feat = {
                             "mpjpe": {"pred": pred_3d, "target": inputs_3d}
                         }
-
                         loss_total, loss_info = self.loss_eval(training_feat)
 
                         bs, ts = inputs_3d.shape[0], inputs_3d.shape[1]

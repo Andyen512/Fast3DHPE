@@ -21,6 +21,7 @@ DATASET:
   Test:
     actions: '*'   
     P2: True 
+    Eval_type: 'Normal' 
 
 # ========= 模型部分 =========
 MODEL:
@@ -50,7 +51,7 @@ LOSS:
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.001
+  lr: 0.000040
   weight_decay: 0.1
   lr_decay: 0.990
 
@@ -61,7 +62,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_PoseFormerV2_lr001_lrd990_f3_torch23"    
+  save_name: "h36m_PoseFormerV2_lr000040_lrd990_f3_torch23"    
   amp: true                    # 自动混合精度
   find_unused_parameters: False
   log_interval: 50

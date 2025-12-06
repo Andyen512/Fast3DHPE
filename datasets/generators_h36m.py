@@ -71,7 +71,6 @@ class PoseChunkDataset_H36M(Dataset):
         seq_i, start_3d, end_3d, flip = self.pairs[index]
         if self.dataset_type == 'seq2seq':
             mid = (start_3d + end_3d) // 2
-
             if self.tds == 1:
                 start_2d = start_3d
                 end_2d   = end_3d

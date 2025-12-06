@@ -190,7 +190,7 @@ class  PoseFormer(nn.Module):
 
             training_feat = {
                             "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d},        
-                            "dis_mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d, "boneindex": self.boneindex}, 
+                            # "dis_mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d, "boneindex": self.boneindex}, 
                             # "diff_mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d},   
                         }
             return training_feat
