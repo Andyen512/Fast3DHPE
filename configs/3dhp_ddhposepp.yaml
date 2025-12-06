@@ -1,0 +1,83 @@
+# ========= 数据集部分 =========
+DATASET:
+  train_dataset: "3DHP"                   # 数据集名称，会影响加载路径
+  root: "data"                   # 存放 data_3d_h36m.npz / data_2d_h36m_xxx.npz 的目录
+  seq_len: 243                   # 每个 clip 的帧数
+  downsample: 1                  # 全局下采样因子
+  eval_stride: 243               # 测试时滑窗步长（整段一窗）
+  subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
+  receptive_field: 243
+  chunk_size: 243
+  batch_size: 768
+  stride: 243
+  Root_idx: 14
+  Cross_Dataset: False
+  test_dataset: 3DHP
+  dataset_type: 'seq2seq'
+  frame_stride: 1
+
+  Test:
+    actions: '*'   
+    P2: True         
+
+# ========= 模型部分 =========
+MODEL:
+  name: "DDHPosePP"
+  backbone:
+    num_frame: 243   # 对齐数据长度
+    num_joints: 17
+    in_chans: 6                     # 输入通道（2D坐标 → x,y）
+    embed_dim_ratio: 512
+    depth: 8
+    num_heads: 8
+    mlp_ratio: 2.0
+    qkv_bias: True
+    drop_rate: 0.
+    attn_drop_rate: 0.
+    drop_path_rate: 0.2
+    is_train: True
+    test_time_augmentation: True
+    timestep: 1000
+    scale: 1
+    num_proposals: 1
+    sampling_timesteps: 1
+    boneindextemp: '1,0,15,1,1,2,2,3,3,4,1,5,5,6,6,7,14,8,8,9,9,10,14,11,11,12,12,13,14,15,1,16'
+
+# ========= 损失 =========
+LOSS:
+  - type: "MPJPELoss"
+    log_prefix: "mpjpe"
+    loss_term_weight: 1.0
+  - type: "Dis_MPJPELoss"
+    log_prefix: "dis_mpjpe"
+    loss_term_weight: 1.0
+    boneindextemp: '1,0,15,1,1,2,2,3,3,4,1,5,5,6,6,7,14,8,8,9,9,10,14,11,11,12,12,13,14,15,1,16'
+
+
+# ========= 优化器 & 学习率 =========
+OPTIM:
+  name: "AdamW"
+  lr: 0.00020
+  weight_decay: 0.1
+  lr_decay: 0.990
+
+SCHED:
+  name: "Cosine"
+  warmup_epochs: 5
+  max_epochs: 400
+
+# ========= 训练引擎 =========
+ENGINE:
+  save_name: "3dhp_ddhposepp_lr00025_lrd990_2_torch23_pos_dis_diffloss"    # 保存路径的一部分
+  amp: true                    # 自动混合精度
+  find_unused_parameters: false
+  log_interval: 50
+  val_interval: 1
+  save_freq: 200
+
+# ========= 运行时设置 =========
+RUNTIME:
+  seed: 1
+
+DEBUG: False
+EVAL: True

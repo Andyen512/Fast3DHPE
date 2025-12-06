@@ -8,9 +8,9 @@ DATASET:
   subjects_test: "S9,S11"             # 半监督用的（可空）
   downsample: 1                  # 全局下采样因子
   subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
-  receptive_field: 351
+  receptive_field: 27
   chunk_size: 1
-  batch_size: 128
+  batch_size: 1024
   stride: 1
   Root_idx: 0
   Cross_Dataset: False
@@ -27,7 +27,7 @@ DATASET:
 MODEL:
   name: "MHFormer"
   backbone:
-    num_frame: 351 
+    num_frame: 27 
     num_block: 3
     num_joints: 17
     embed_dim_ratio: 512
@@ -48,8 +48,8 @@ LOSS:
 OPTIM:
   name: "AdamW"
   lr: 0.00012
-  weight_decay: 0.1
-  lr_decay: 0.990
+  weight_decay: 0.001
+  lr_decay: 0.950
 
 SCHED:
   name: "Cosine"
@@ -58,7 +58,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_MHFormer_lr00012_lrd990"    # 保存路径的一部分
+  save_name: "h36m_MHFormer_lr001_lrd950"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: False
   log_interval: 50

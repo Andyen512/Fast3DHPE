@@ -8,9 +8,9 @@ DATASET:
   subjects_test: "S9,S11"             # 半监督用的（可空）
   downsample: 1                  # 全局下采样因子
   subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
-  receptive_field: 243
+  receptive_field: 27
   chunk_size: 1
-  batch_size: 512
+  batch_size: 2048
   stride: 1
   Root_idx: 0
   Cross_Dataset: False
@@ -32,7 +32,7 @@ MODEL:
     in_chans: 2                     # 输入通道（2D坐标 → x,y）
     embed_dim_ratio: 1024
     drop_path_rate: 0.25
-    filter_widths: [3, 3, 3, 3, 3]
+    filter_widths: [3, 3, 3,]
     dense: False
     causal: False
     
@@ -44,18 +44,13 @@ LOSS:
   log_prefix: "mpjpe"
   loss_term_weight: 1.0
 
-LOSS_EVAL:
-  type: "MPJPELoss"
-  log_prefix: "mpjpe"
-  loss_term_weight: 1.0
-
 
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00012
+  lr: 0.001
   weight_decay: 0.1
-  lr_decay: 0.990
+  lr_decay: 0.950
 
 SCHED:
   name: "Cosine"
@@ -64,9 +59,9 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_VideoPose3D_lr00012_lrd990"    # 保存路径的一部分
+  save_name: "h36m_VideoPose3D_lr001_lrd950"    # 保存路径的一部分
   amp: true                    # 自动混合精度
-  find_unused_parameters: False
+  find_unused_parameters: false
   log_interval: 50
   val_interval: 1
   save_freq: 200

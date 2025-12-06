@@ -270,7 +270,7 @@ class SinusoidalPositionEmbeddings(nn.Module):
 class  HSTDenoiser(nn.Module):
     def __init__(self, num_frame=9, num_joints=17, in_chans=2, embed_dim_ratio=32, depth=4,
                  num_heads=8, mlp_ratio=2., qkv_bias=True, qk_scale=None,
-                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None,  boneindex=None):
+                 drop_rate=0., attn_drop_rate=0., drop_path_rate=0.2,  norm_layer=None,  boneindex=None, rootidx=0):
         """    ##########hybrid_backbone=None, representation_size=None,
         Args:
             num_frame (int, tuple): input frame number
@@ -311,18 +311,6 @@ class  HSTDenoiser(nn.Module):
             nn.Linear(embed_dim_ratio*2, embed_dim_ratio),
         )
 
-        self.group = nn.Parameter(torch.zeros(1, 6, embed_dim))
-        self.lev0_list = [0]
-        self.lev1_list = [1,4,7]
-        self.lev2_list = [2,5,8]
-        self.lev3_list = [3,6,9,11,14]
-        self.lev4_list = [10,12,15]
-        self.lev5_list = [13,16]
-
-        self.boneindex = boneindex
-
-        bonechain = [[0,1,2,3],[0,4,5,6],[0,7,8,9,10],[0,7,8,11,12,13],[0,7,8,14,15,16]]
-
         # ---------- 构图：无向、无自环 ----------
         def chains_to_pairs(chains):
             pairs = set()
@@ -332,13 +320,45 @@ class  HSTDenoiser(nn.Module):
                     pairs.add((a, b)); pairs.add((b, a))   # 无向
             return sorted(list(pairs))
 
-        bone_pairs = chains_to_pairs([
-            [0,1,2,3],
-            [0,4,5,6],
-            [0,7,8,9,10],
-            [0,7,8,11,12,13],
-            [0,7,8,14,15,16],
-        ])
+        self.group = nn.Parameter(torch.zeros(1, 6, embed_dim))
+        if rootidx==0:
+            self.lev0_list = [0]
+            self.lev1_list = [1,4,7]
+            self.lev2_list = [2,5,8]
+            self.lev3_list = [3,6,9,11,14]
+            self.lev4_list = [10,12,15]
+            self.lev5_list = [13,16]
+            bonechain = [[0,1,2,3],[0,4,5,6],[0,7,8,9,10],[0,7,8,11,12,13],[0,7,8,14,15,16]]
+            bone_pairs = chains_to_pairs([
+                [0,1,2,3],
+                [0,4,5,6],
+                [0,7,8,9,10],
+                [0,7,8,11,12,13],
+                [0,7,8,14,15,16],
+            ])
+        else:
+            self.lev0_list = [14]
+            self.lev1_list = [8,11,15]
+            self.lev2_list = [1,9,12,]
+            self.lev3_list = [0,2,5,10,13,16]
+            self.lev4_list = [3,6]
+            self.lev5_list = [4,7]           
+            bonechain = [[14,8,9,10],[14,11,12,13],[14,15,1,0],[14,15,1,2,3,4],[14,15,1,5,6,7],[14,15,1,16]]
+            bone_pairs = chains_to_pairs([
+                [14,8,9,10],
+                [14,11,12,13],
+                [14,15,1,0],
+                [14,15,1,2,3,4],
+                [14,15,1,5,6,7],
+                [14,15,1,16]
+            ])
+
+        self.boneindex = boneindex
+
+
+
+
+
 
         N = 17
         M = torch.zeros(N, N)

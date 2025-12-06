@@ -11,7 +11,7 @@ import torch.optim as optim
 from einops import rearrange, repeat
 from time import time
 from .evaluation.evaluator import *
-
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 def save_checkpoint(model, optimizer, scheduler, cfg, out_dir,
                     epoch, metric=None, is_best=False, tag=None, logger=None):
@@ -194,6 +194,8 @@ class Trainer:
             if self.cfg["EVAL"]:
                 self.training = False
                 model.eval()
+                if isinstance(model, DDP):
+                    model.module.eval()   # 这里才会触发你自定义的 eval() -> build_eval_model()
                 local_sum = torch.zeros(1, device=device, dtype=torch.float32)
                 local_cnt = torch.zeros(1, device=device, dtype=torch.float32)
 

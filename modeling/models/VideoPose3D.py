@@ -183,6 +183,9 @@ class TemporalModelOptimized1f(TemporalModelBase):
             
         self.layers_conv = nn.ModuleList(layers_conv)
         self.layers_bn = nn.ModuleList(layers_bn)
+        self.causal = causal
+        self.dropout = dropout
+        self.channels = channels
         
     def _forward_blocks(self, x):
         x = self.drop(self.relu(self.expand_bn(self.expand_conv(x))))
@@ -196,62 +199,45 @@ class TemporalModelOptimized1f(TemporalModelBase):
         x = self.shrink(x)
         return x
 
-class  VideoPose3D(nn.Module):
+class VideoPose3D(nn.Module):
     def __init__(self, num_joints=17, in_chans=2, embed_dim_ratio=32, drop_path_rate=0.2, 
-                 filter_widths=[3, 3, 3, 3], dense = False, causal=False,
+                 filter_widths=[3, 3, 3, 3], dense=False, causal=False,
                  joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
-        super().__init__()  
+        super().__init__()
 
-        self.model_eval = None
-        # self.model_pos = TemporalModel(num_joints, in_chans, num_joints, filter_widths, causal, drop_path_rate, embed_dim_ratio, dense)
-        self.model_pos = TemporalModelOptimized1f(num_joints, in_chans, num_joints,
-                                    filter_widths=filter_widths, causal=causal, dropout=drop_path_rate, channels=embed_dim_ratio)
-        self.joints_left = joints_left
-        self.joints_right = joints_right
+        # 统一使用一个 TemporalModel，train / eval 共用
+        self.model = TemporalModel(
+            num_joints_in=num_joints,
+            in_features=in_chans,
+            num_joints_out=num_joints,
+            filter_widths=filter_widths,
+            causal=causal,
+            dropout=drop_path_rate,
+            channels=embed_dim_ratio,
+            dense=dense,
+        )
+
+        self.joints_left = joints_left or []
+        self.joints_right = joints_right or []
         self.rootidx = rootidx
 
-    def build_eval_model(self):
-        if self.model_eval is None:
-            self.model_eval = TemporalModel(
-                num_joints_in=self.model_pos.num_joints_in,
-                in_features=self.model_pos.in_features,
-                num_joints_out=self.model_pos.num_joints_out,
-                filter_widths=self.model_pos.filter_widths,
-                causal=self.model_pos.causal,
-                dropout=self.model_pos.dropout,
-                channels=self.model_pos.channels,
-            ).to(next(self.model_pos.parameters()).device)
-
-        # 拷贝参数
-        self.model_eval.load_state_dict(self.model_pos.state_dict(), strict=False)
-
-    def eval(self):
-        super().eval()
-        self.model_pos.eval()
-        self.build_eval_model()   # 构建并拷贝参数
-        self.model_eval.eval()
-        return self
     def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False, inputs_act=None):
-        if istrain:
-            predicted_3d_pos = self.model_pos(inputs_2d)
-        else:
-            predicted_3d_pos = self.model_eval(inputs_2d)
-        
-        
-        if input_2d_flip is not None:
-            predicted_3d_pos_flip = self.model_pos(input_2d_flip)
-            predicted_3d_pos_flip[..., 0] *= -1
-            predicted_3d_pos_flip[:, :, self.joints_left + self.joints_right] = predicted_3d_pos_flip[:, :, self.joints_right + self.joints_left]
-            # for i in range(predicted_3d_pos.shape[0]):
-            #     predicted_3d_pos[i,:,:,:] = (predicted_3d_pos[i,:,:,:] + predicted_3d_pos_flip[i,:,:,:])/2
-            predicted_3d_pos = (predicted_3d_pos + predicted_3d_pos_flip) / 2
-            
-        if istrain:
-            # return predicted_3d_pos
+        # 统一用一个 core 模型
+        predicted_3d_pos = self.model(inputs_2d)
 
+        # ---- TTA flip（可选）----
+        if input_2d_flip is not None:
+            predicted_3d_pos_flip = self.model(input_2d_flip)
+            predicted_3d_pos_flip[..., 0] *= -1
+            if self.joints_left and self.joints_right:
+                predicted_3d_pos_flip[:, :, self.joints_left + self.joints_right] = \
+                    predicted_3d_pos_flip[:, :, self.joints_right + self.joints_left]
+            predicted_3d_pos = (predicted_3d_pos + predicted_3d_pos_flip) / 2
+
+        if istrain:
             training_feat = {
-                            "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d },        # 键名要等于 cfg.LOSS[*].log_prefix
-                        }
+                "mpjpe": {"pred": predicted_3d_pos, "target": inputs_3d},
+            }
             return training_feat
         else:
             return predicted_3d_pos

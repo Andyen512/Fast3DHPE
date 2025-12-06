@@ -379,6 +379,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
             joints_left, joints_right = kps_left, kps_right
             poses_train, poses_train_2d, poses_valid, poses_valid_2d   = _load_keypoints_3DHP(data_train, data_test)
             cameras_train, cameras_valid = None, None
+            action_train, action_valid = None, None
 
     
         train_dataset = ChunkDataset(poses_train_2d, poses_train, cameras_train, action_train,

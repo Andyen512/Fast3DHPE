@@ -86,7 +86,7 @@ def getbonelength_test(seq, boneindex):
 
     return bone
 
-class DDHPose(nn.Module):
+class DDHPosePP(nn.Module):
     """
     Implement DDHPose
     """
@@ -164,7 +164,7 @@ class DDHPose(nn.Module):
 
         self.dir_bone_estimator = HSTDenoiser(num_frame=num_frame, num_joints=num_joints, in_chans=in_chans, embed_dim_ratio=embed_dim_ratio, 
                                               depth=depth, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale, 
-                                              drop_path_rate=drop_path_rate, boneindex=self.boneindex)
+                                              drop_path_rate=drop_path_rate, boneindex=self.boneindex, rootidx=self.rootidx)
 
     def predict_noise_from_start(self, x_t, t, x0):
         return (
@@ -312,7 +312,7 @@ class DDHPose(nn.Module):
             training_feat = {
                             "mpjpe": { "pred": pred_pose, "target": inputs_3d},        
                             "dis_mpjpe": { "pred": pred_pose, "target": inputs_3d, "boneindex": self.boneindex}, 
-                            "diff_mpjpe": { "pred": pred_pose, "target": inputs_3d},   
+                            # "diff_mpjpe": { "pred": pred_pose, "target": inputs_3d},   
                         }
             return training_feat
 

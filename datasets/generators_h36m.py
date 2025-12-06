@@ -22,7 +22,7 @@ class PoseChunkDataset_H36M(Dataset):
         self.cameras = cameras
         self.action = action
         self.chunk_length = chunk_length
-        self.pad = pad * tds
+        self.pad = pad 
         self.causal_shift = causal_shift
         self.augment = augment
         self.kps_left = kps_left

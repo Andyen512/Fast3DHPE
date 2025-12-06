@@ -23,13 +23,23 @@ def cam_mm_to_pix(cam, cam_data):
     return cam
 
 class PoseChunkDataset_3DHP(Dataset):
-    def __init__(self, poses_2d, poses_3d=None, cameras=None,
+    def __init__(self, poses_2d, poses_3d=None, cameras=None, action_train=None,
                  chunk_length=1, pad=0, causal_shift=0, random_seed=1234,
-                 augment=False, kps_left=None, kps_right=None, joints_left=None, joints_right=None):
+                 augment=False, kps_left=None, kps_right=None,
+                 joints_left=None, joints_right=None,
+                 dataset_type='seq2frame', frame_stride=1, tds=1):
+
+        """
+        poses_2d / poses_3d / cameras: dict, key = (subject, seq, cam_index)
+            poses_2d[key]: [T, J, 2]
+            poses_3d[key]: [T, J, 3]
+            cameras[key]:  camera params for this sequence
+        """
 
         self.poses_2d = poses_2d
         self.poses_3d = poses_3d
         self.cameras = cameras
+
         self.chunk_length = chunk_length
         self.pad = pad
         self.causal_shift = causal_shift
@@ -40,63 +50,184 @@ class PoseChunkDataset_3DHP(Dataset):
         self.joints_right = joints_right
         self.random = np.random.RandomState(random_seed)
 
-        self.pairs = [] # (seq_idx, start_frame, end_frame, flip) tuples
-        for key in poses_2d.keys():
-            assert poses_3d is None or poses_2d[key].shape[0] == poses_3d[key].shape[0]
-            n_chunks = (poses_2d[key].shape[0] + chunk_length - 1) // chunk_length
-            offset = (n_chunks * chunk_length - poses_2d[key].shape[0]) // 2
-            bounds = np.arange(n_chunks+1)*chunk_length - offset
-            augment_vector = np.full(len(bounds - 1), False, dtype=bool)
-            keys = np.tile(np.array(key).reshape([1, 3]), (len(bounds - 1), 1))
-            self.pairs += zip(keys, bounds[:-1], bounds[1:], augment_vector)
+        self.dataset_type = dataset_type  # 'seq2seq' or 'seq2frame'
+        self.frame_stride = frame_stride
+        self.tds = tds
+
+        # ----------------- build pairs: (seq_key, start, end, flip) -----------------
+        self.pairs = []
+
+        for key in self.poses_2d.keys():
+            # key is (subject, seq, cam_index)
+            assert (self.poses_3d is None
+                    or self.poses_2d[key].shape[0] == self.poses_3d[key].shape[0])
+
+            n_frames = self.poses_2d[key].shape[0]
+            n_chunks = (n_frames + chunk_length - 1) // chunk_length
+            offset = (n_chunks * chunk_length - n_frames) // 2
+            bounds = np.arange(n_chunks + 1) * chunk_length - offset  # [0..n_chunks]*L - offset
+
+            # seq_key 用 numpy array 存三元组，保持和你原版一致
+            keys = np.tile(np.array(key).reshape(1, 3), (len(bounds) - 1, 1))
+
+            flip_flags = np.zeros(len(bounds) - 1, dtype=bool)
+            self.pairs += list(zip(keys, bounds[:-1], bounds[1:], flip_flags))
+
             if augment:
-                self.pairs += zip(keys, bounds[:-1], bounds[1:], ~augment_vector)
+                flip_flags_aug = ~flip_flags
+                self.pairs += list(zip(keys, bounds[:-1], bounds[1:], flip_flags_aug))
+
+    # ----------------- 工具函数 -----------------
+    def _pad_sequence(self, seq, start, end):
+        low = max(start, 0)
+        high = min(end, seq.shape[0])
+        pad_left = low - start
+        pad_right = end - high
+        chunk = seq[low:high]
+        if pad_left > 0 or pad_right > 0:
+            chunk = np.pad(
+                chunk,
+                ((pad_left, pad_right), (0, 0), (0, 0)),
+                mode='edge'
+            )
+        return chunk
 
     def random_state(self):
         return self.random
-    
+
     def set_random_state(self, random):
         self.random = random
 
     def __len__(self):
         return len(self.pairs)
 
+    # ----------------- 主逻辑 -----------------
     def __getitem__(self, index):
         seq_i, start_3d, end_3d, flip = self.pairs[index]
-        start_2d = start_3d
-        end_2d = end_3d
+        # seq_i 是一个形状为 (3,) 的 numpy 数组
         subject, seq, cam_index = seq_i
         seq_name = (subject, seq, cam_index)
-        
-        # ----------- 2D pose -------------
-        seq_2d = np.asarray(self.poses_2d[seq_name])  # Ensure ndarray
-        chunk_2d = self._pad_sequence(seq_2d, start_2d, end_2d)
-        if flip:
-            chunk_2d[:, :, 0] *= -1
-            chunk_2d[:, self.kps_left + self.kps_right] = chunk_2d[:, self.kps_right + self.kps_left]
 
-        # ----------- 3D pose -------------
-        chunk_3d = None
-        if self.poses_3d is not None:
-            seq_3d = np.asarray(self.poses_3d[seq_name])
-            seq_3d = seq_3d / 1000
-            chunk_3d = self._pad_sequence(seq_3d, start_3d, end_3d)
-            if flip:
-                chunk_3d[:, :, 0] *= -1
-                chunk_3d[:, self.joints_left + self.joints_right] = chunk_3d[:, self.joints_right + self.joints_left]
+        if self.dataset_type == 'seq2seq':
+            # ===== seq2seq 模式：3D 输出为 [chunk_length]，2D 可以是 tds 扩展的长序列 =====
+            mid = (start_3d + end_3d) // 2
 
-        # ----------- Camera --------------
-        cam = None
-        if self.cameras is not None:
-            cam = np.asarray(self.cameras[seq_name]).copy()
+            if self.tds == 1:
+                start_2d = start_3d
+                end_2d = end_3d
+            else:
+                # tds > 1 时，用 pad * tds 决定 2D 的感受野长度（和 H36M 版本一致）
+                pad_eff = self.pad * self.tds
+                start_2d = mid - pad_eff
+                end_2d = mid + pad_eff
+
+            # ----------- 2D pose -------------
+            seq_2d = np.asarray(self.poses_2d[seq_name])
+            chunk_2d = self._pad_sequence(seq_2d, start_2d, end_2d)
+
+            if self.frame_stride > 1:
+                chunk_2d = chunk_2d[::self.frame_stride]
+
             if flip:
-                cam[2] *= -1
-                cam[7] *= -1
+                # 注意：2D 用 kps_left / kps_right
+                chunk_2d[:, :, 0] *= -1
+                if self.kps_left is not None and self.kps_right is not None:
+                    chunk_2d[:, self.kps_left + self.kps_right] = \
+                        chunk_2d[:, self.kps_right + self.kps_left]
+
+            # ----------- 3D pose -------------
+            chunk_3d = None
+            if self.poses_3d is not None:
+                seq_3d = np.asarray(self.poses_3d[seq_name])
+                # 和你原始 3DHP 代码保持一致：毫米 -> 米
+                seq_3d = seq_3d / 1000.0
+
+                chunk_3d = self._pad_sequence(seq_3d, start_3d, end_3d)
+                if self.frame_stride > 1:
+                    chunk_3d = chunk_3d[::self.frame_stride]
+
+                if flip:
+                    chunk_3d[:, :, 0] *= -1
+                    if self.joints_left is not None and self.joints_right is not None:
+                        chunk_3d[:, self.joints_left + self.joints_right] = \
+                            chunk_3d[:, self.joints_right + self.joints_left]
+
+            # ----------- Camera --------------
+            if self.cameras is not None:
+                cam = np.asarray(self.cameras[seq_name]).copy()
+                if flip:
+                    cam[2] *= -1
+                    cam[7] *= -1
+            else:
+                cam = np.zeros_like(chunk_3d) if chunk_3d is not None else None
+
+            # 3DHP 原版只返回 (cam, 3D, 2D)
+            return cam, chunk_3d, chunk_2d, 0
+
         else:
-            cam = np.zeros_like(chunk_3d)  # 占位，保持一致
-        
+            # ===== seq2frame 模式：H36M 风格，2D 有 pad/causal_shift，3D 对应输出帧 =====
+            # -------------------- 2D INPUT --------------------
+            seq_2d = np.asarray(self.poses_2d[seq_name])
 
-        return cam, chunk_3d, chunk_2d
+            start_2d = start_3d - self.pad - self.causal_shift
+            end_2d = end_3d + self.pad - self.causal_shift
+
+            low_2d = max(start_2d, 0)
+            high_2d = min(end_2d, seq_2d.shape[0])
+            pad_left = low_2d - start_2d
+            pad_right = end_2d - high_2d
+
+            if pad_left != 0 or pad_right != 0:
+                chunk_2d = np.pad(
+                    seq_2d[low_2d:high_2d],
+                    ((pad_left, pad_right), (0, 0), (0, 0)),
+                    mode="edge"
+                )
+            else:
+                chunk_2d = seq_2d[low_2d:high_2d]
+
+            if flip:
+                chunk_2d[:, :, 0] *= -1
+                if self.kps_left is not None and self.kps_right is not None:
+                    chunk_2d[:, self.kps_left + self.kps_right] = \
+                        chunk_2d[:, self.kps_right + self.kps_left]
+
+            # -------------------- 3D SUPERVISION --------------------
+            chunk_3d = None
+            if self.poses_3d is not None:
+                seq_3d = np.asarray(self.poses_3d[seq_name])
+                seq_3d = seq_3d / 1000.0  # 保持和你原 3DHP 一致
+
+                low_3d = max(start_3d, 0)
+                high_3d = min(end_3d, seq_3d.shape[0])
+                pad_left = low_3d - start_3d
+                pad_right = end_3d - high_3d
+
+                if pad_left != 0 or pad_right != 0:
+                    chunk_3d = np.pad(
+                        seq_3d[low_3d:high_3d],
+                        ((pad_left, pad_right), (0, 0), (0, 0)),
+                        mode="edge"
+                    )
+                else:
+                    chunk_3d = seq_3d[low_3d:high_3d]
+
+                if flip:
+                    chunk_3d[:, :, 0] *= -1
+                    if self.joints_left is not None and self.joints_right is not None:
+                        chunk_3d[:, self.joints_left + self.joints_right] = \
+                            chunk_3d[:, self.joints_right + self.joints_left]
+
+            # -------------------- Camera --------------------
+            if self.cameras is not None:
+                cam = np.asarray(self.cameras[seq_name]).copy()
+                if flip:
+                    cam[2] *= -1
+                    cam[7] *= -1
+            else:
+                cam = np.zeros_like(chunk_3d) if chunk_3d is not None else None
+
+            return cam, chunk_3d, chunk_2d, None
 
 
     def _pad_sequence(self, seq, start, end):
@@ -110,7 +241,7 @@ class PoseChunkDataset_3DHP(Dataset):
         return chunk
 
 class PoseUnchunkedDataset_3DHP(Dataset):
-    def __init__(self, poses_2d, poses_3d=None, cameras=None,
+    def __init__(self, poses_2d, poses_3d=None, cameras=None, action_valid=None,
                  pad=0, causal_shift=0, augment=False,
                  kps_left=None, kps_right=None, joints_left=None, joints_right=None):
 
@@ -174,5 +305,5 @@ class PoseUnchunkedDataset_3DHP(Dataset):
             chunk_2d[1, :, :, 0] *= -1
             chunk_2d[1, :, self.kps_left + self.kps_right] = chunk_2d[1, :, self.kps_right + self.kps_left]
 
-        return cam, chunk_3d, chunk_2d, seq_name
+        return cam, chunk_3d, chunk_2d, seq_name, None
 
