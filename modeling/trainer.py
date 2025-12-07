@@ -297,10 +297,13 @@ class Trainer:
 
 
     def test(self, cfg, model, bundle_list, ckpt_path=None):
-        eval_type = cfg["DATASET"]["Test"]["Eval_type"]
+        eval_type         = cfg["DATASET"]["Test"]["Eval_type"]
+        test_dataset_name = cfg["DATASET"].get("test_dataset", "")
+
         if self.optimizer is None:
             self.optimizer = self._build_optim(model)
 
+        # ---------- load ckpt ----------
         if ckpt_path is not None:
             checkpoint = torch.load(ckpt_path, map_location=lambda storage, loc: storage, weights_only=False)
             model.module.load_state_dict(checkpoint['model'], strict=False)
@@ -311,30 +314,118 @@ class Trainer:
             if 'optimizer' in checkpoint and checkpoint['optimizer'] is not None:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
 
+        # =====================================================
+        # 特殊分支：3DHP（不按 action 分），JPMA / Normal 都只整体评测一次
+        # =====================================================
+        if test_dataset_name == '3DHP':
+            if len(bundle_list) == 0:
+                if is_main_process():
+                    self.logger.info("No test bundle found for 3DHP.")
+                return
+
+            bundle      = bundle_list[0]   # 约定：3DHP 只有一个整体 bundle
+            test_loader = bundle.test_loader
+            kps_left    = bundle.kps_left
+            kps_right   = bundle.kps_right
+            joints_left = bundle.joints_left
+            joints_right= bundle.joints_right
+
+            if test_loader is None:
+                if is_main_process():
+                    self.logger.info("test_loader is None — fill datasets/builder.py to enable testing.")
+                return
+
+            if eval_type == 'JPMA':
+                # 3DHP + JPMA：evaluate 会多返回 pck/auc
+                if cfg['DATASET']['Test']['P2']:
+                    e1, e1_h, e1_mean, e1_select, \
+                    e2, e2_h, e2_mean, e2_select, \
+                    pck, auc = evaluate(
+                        cfg, test_loader, model_pos=model,
+                        kps_left=kps_left, kps_right=kps_right,
+                        joints_left=joints_left, joints_right=joints_right,
+                        action=None, logger=self.logger
+                    )
+                else:
+                    e1, e1_h, e1_mean, e1_select, \
+                    pck, auc = evaluate(
+                        cfg, test_loader, model_pos=model,
+                        kps_left=kps_left, kps_right=kps_right,
+                        joints_left=joints_left, joints_right=joints_right,
+                        action=None, logger=self.logger
+                    )
+
+                if is_main_process() and pck is not None and auc is not None:
+                    self.logger.info("========== 3DHP JPMA overall ==========")
+                    self.logger.info("3DHP PCK (overall, JPMA): %.2f",  pck)
+                    self.logger.info("3DHP AUC (overall, JPMA): %.4f", auc)
+                    self.logger.info("========================================")
+                return
+
+            elif eval_type == 'Normal':
+                # 3DHP + Normal：整体 1 次评测 + PCK/AUC
+                e1, e2, e3, ev, pck, auc = evaluate(
+                    cfg, test_loader, model_pos=model,
+                    kps_left=kps_left, kps_right=kps_right,
+                    joints_left=joints_left, joints_right=joints_right,
+                    action=None, logger=self.logger
+                )
+
+                import torch as _torch
+
+                def _to_float(x):
+                    if x is None:
+                        return None
+                    return x.item() if isinstance(x, _torch.Tensor) else float(x)
+
+                e1_f  = _to_float(e1)
+                e2_f  = _to_float(e2)
+                e3_f  = _to_float(e3)
+                ev_f  = _to_float(ev)
+                pck_f = _to_float(pck)
+                auc_f = _to_float(auc)
+
+                if is_main_process():
+                    self.logger.info("========== 3DHP overall evaluation ==========")
+                    self.logger.info("Protocol #1 Error (MPJPE):   %.4f mm", e1_f)
+                    self.logger.info("Protocol #2 Error (P-MPJPE): %.4f mm", e2_f)
+                    self.logger.info("Protocol #3 Error (N-MPJPE): %.4f mm", e3_f)
+                    self.logger.info("Velocity Error (MPJVE):      %.4f mm", ev_f)
+                    if pck_f is not None and auc_f is not None:
+                        self.logger.info("3DHP PCK (overall):         %.2f",  pck_f)
+                        self.logger.info("3DHP AUC (overall):         %.4f", auc_f)
+                    self.logger.info("=============================================")
+                return
+
+        # =====================================================
+        # 通用分支：H36M 等其他数据集，保留“按 action 评测 + 平均”的逻辑
+        # =====================================================
         if eval_type == 'JPMA':
-            errors_p1 = []
-            errors_p1_h = []
-            errors_p1_mean = []
+            errors_p1        = []
+            errors_p1_h      = []
+            errors_p1_mean   = []
             errors_p1_select = []
 
-            errors_p2 = []
-            errors_p2_h = []
-            errors_p2_mean = []
+            errors_p2        = []
+            errors_p2_h      = []
+            errors_p2_mean   = []
             errors_p2_select = []
         elif eval_type == 'Normal':
-            errors_p1 = []
-            errors_p2 = []
-            errors_p3 = []
+            errors_p1  = []
+            errors_p2  = []
+            errors_p3  = []
             errors_vel = []
+            errors_pck, errors_auc = [], []
 
         for bundle in bundle_list:
             test_loader = bundle.test_loader
-            action_key = bundle.action_key
+            action_key  = bundle.action_key
             action_filter = bundle.action_filter
-            kps_left = bundle.kps_left
-            kps_right = bundle.kps_right
+            kps_left    = bundle.kps_left
+            kps_right   = bundle.kps_right
             joints_left = bundle.joints_left
-            joints_right = bundle.joints_right
+            joints_right= bundle.joints_right
+
             if action_filter is not None:
                 found = False
                 for a in action_filter:
@@ -343,6 +434,7 @@ class Trainer:
                         break
                 if not found:
                     continue
+
             if test_loader is None:
                 if is_main_process():
                     self.logger.info("train_loader is None — fill datasets/builder.py to enable training.")
@@ -350,13 +442,20 @@ class Trainer:
 
             if eval_type == 'JPMA':
                 if cfg['DATASET']['Test']['P2']:
-                    e1, e1_h, e1_mean, e1_select, e2, e2_h, e2_mean, e2_select = evaluate(cfg, test_loader, model_pos=model , 
-                                                        kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, 
-                                                        joints_right=joints_right, action=action_key, logger=self.logger)
+                    e1, e1_h, e1_mean, e1_select, \
+                    e2, e2_h, e2_mean, e2_select = evaluate(
+                        cfg, test_loader, model_pos=model,
+                        kps_left=kps_left, kps_right=kps_right,
+                        joints_left=joints_left, joints_right=joints_right,
+                        action=action_key, logger=self.logger
+                    )
                 else:
-                    e1, e1_h, e1_mean, e1_select = evaluate(cfg, test_loader, model_pos=model ,kps_left=kps_left, 
-                                                            kps_right=kps_right, joints_left=joints_left, 
-                                                            joints_right=joints_right, action=action_key, logger=self.logger)   
+                    e1, e1_h, e1_mean, e1_select = evaluate(
+                        cfg, test_loader, model_pos=model,
+                        kps_left=kps_left, kps_right=kps_right,
+                        joints_left=joints_left, joints_right=joints_right,
+                        action=action_key, logger=self.logger
+                    )
 
                 errors_p1.append(e1)
                 errors_p1_h.append(e1_h)
@@ -370,32 +469,43 @@ class Trainer:
                     errors_p2_select.append(e2_select)
 
             elif eval_type == 'Normal':
-                e1, e2, e3, ev = evaluate(cfg, test_loader, model_pos=model ,kps_left=kps_left, 
-                                        kps_right=kps_right, joints_left=joints_left, 
-                                        joints_right=joints_right, action=action_key, logger=self.logger)   
-                errors_p1.append(e1)
-                errors_p2.append(e2)
-                errors_p3.append(e3)
-                errors_vel.append(ev)
+                # 所有数据集在 Normal 下都按 6 个返回值解包；
+                # 对非 3DHP，evaluate 会返回 pck=auc=None
+                e1, e2, e3, ev, pck, auc = evaluate(
+                    cfg, test_loader, model_pos=model,
+                    kps_left=kps_left, kps_right=kps_right,
+                    joints_left=joints_left, joints_right=joints_right,
+                    action=action_key, logger=self.logger
+                )
 
+                errors_p1.append(torch.as_tensor(e1, dtype=torch.float32))
+                errors_p2.append(torch.as_tensor(e2, dtype=torch.float32))
+                errors_p3.append(torch.as_tensor(e3, dtype=torch.float32))
+                errors_vel.append(torch.as_tensor(ev, dtype=torch.float32))
+
+                if pck is not None and auc is not None:
+                    errors_pck.append(torch.as_tensor(pck, dtype=torch.float32))
+                    errors_auc.append(torch.as_tensor(auc, dtype=torch.float32))
+
+        # ---------- JPMA 聚合（H36M 等） ----------
         if eval_type == 'JPMA':
-            errors_p1 = torch.stack(errors_p1)
+            errors_p1  = torch.stack(errors_p1)
             errors_p1_actionwise = torch.mean(errors_p1, dim=0)
-            errors_p1_h = torch.stack(errors_p1_h)
+            errors_p1_h  = torch.stack(errors_p1_h)
             errors_p1_actionwise_h = torch.mean(errors_p1_h, dim=0)
-            errors_p1_mean = torch.stack(errors_p1_mean)
+            errors_p1_mean  = torch.stack(errors_p1_mean)
             errors_p1_actionwise_mean = torch.mean(errors_p1_mean, dim=0)
-            errors_p1_select = torch.stack(errors_p1_select)
+            errors_p1_select  = torch.stack(errors_p1_select)
             errors_p1_actionwise_select = torch.mean(errors_p1_select, dim=0)
 
             if cfg['DATASET']['Test']['P2']:
-                errors_p2 = torch.stack(errors_p2)
+                errors_p2  = torch.stack(errors_p2)
                 errors_p2_actionwise = torch.mean(errors_p2, dim=0)
-                errors_p2_h = torch.stack(errors_p2_h)
+                errors_p2_h  = torch.stack(errors_p2_h)
                 errors_p2_actionwise_h = torch.mean(errors_p2_h, dim=0)
-                errors_p2_mean = torch.stack(errors_p2_mean)
+                errors_p2_mean  = torch.stack(errors_p2_mean)
                 errors_p2_actionwise_mean = torch.mean(errors_p2_mean, dim=0)
-                errors_p2_select = torch.stack(errors_p2_select)
+                errors_p2_select  = torch.stack(errors_p2_select)
                 errors_p2_actionwise_select = torch.mean(errors_p2_select, dim=0)
 
             if is_main_process():
@@ -418,8 +528,20 @@ class Trainer:
                                 ii, errors_p2_actionwise_mean[ii].item())
                         self.logger.info("step %d Protocol #2 (MPJPE) action-wise average J_Agg:  %.4f mm",
                                 ii, errors_p2_actionwise_select[ii].item())
+
+        # ---------- Normal 聚合（H36M 等） ----------
         elif eval_type == 'Normal':
-            self.logger.info('Protocol #1   (MPJPE) action-wise average: %.1f mm', torch.mean(torch.stack(errors_p1)).item())
-            self.logger.info('Protocol #2 (P-MPJPE) action-wise average: %.1f mm', torch.mean(torch.stack(errors_p2)).item())
-            self.logger.info('Protocol #3 (N-MPJPE) action-wise average: %.1f mm', torch.mean(torch.stack(errors_p3)).item())
-            self.logger.info('Velocity      (MPJVE) action-wise average: %.2f mm', torch.mean(torch.stack(errors_vel)).item())
+            if is_main_process():
+                self.logger.info('Protocol #1   (MPJPE) action-wise average: %.1f mm',
+                                torch.mean(torch.stack(errors_p1)).item())
+                self.logger.info('Protocol #2 (P-MPJPE) action-wise average: %.1f mm',
+                                torch.mean(torch.stack(errors_p2)).item())
+                self.logger.info('Protocol #3 (N-MPJPE) action-wise average: %.1f mm',
+                                torch.mean(torch.stack(errors_p3)).item())
+                self.logger.info('Velocity      (MPJVE) action-wise average: %.2f mm',
+                                torch.mean(torch.stack(errors_vel)).item())
+                if len(errors_pck) > 0:
+                    self.logger.info('PCK action-wise average: %.2f',
+                                    torch.mean(torch.stack(errors_pck)).item())
+                    self.logger.info('AUC action-wise average: %.4f',
+                                    torch.mean(torch.stack(errors_auc)).item())

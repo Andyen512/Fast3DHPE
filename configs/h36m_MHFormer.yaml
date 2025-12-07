@@ -22,6 +22,7 @@ DATASET:
   Test:
     actions: '*'   
     P2: True 
+    Eval_type: 'Normal' 
 
 # ========= 模型部分 =========
 MODEL:
@@ -58,7 +59,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_MHFormer_lr001_lrd950"    # 保存路径的一部分
+  save_name: "h36m_MHFormer_lr0012_lrd950_amp"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: False
   log_interval: 50

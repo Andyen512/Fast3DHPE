@@ -281,7 +281,7 @@ def build_data_bundle_test_H36M(cfg, kps_left, kps_right, joints_left, joints_ri
         cameras_act, poses_act, poses_2d_act, action = fetch_actions(actions[action_key], keypoints, dataset)
         act_dataset = PoseUnchunkedDataset(poses_2d_act, poses_act, cameras_act, action,
                                         pad=0, 
-                                        causal_shift=0, augment=True,
+                                        causal_shift=0, augment=False,
                                         kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
                                         joints_right=joints_right)
 
@@ -311,10 +311,13 @@ def build_data_bundle_test_3DHP(cfg, kps_left, kps_right, joints_left, joints_ri
                     break
             if not found:
                 continue
-       
-        act_dataset = PoseUnchunkedDataset(poses_valid_2d, poses_valid, None,
-                                        pad=(cfg["DATASET"]["number_of_frames"] -1) // 2, 
-                                        causal_shift=0, augment=True,
+
+
+        # poses_valid_3d_act = {action_key: poses_valid[action_key]}
+        # poses_valid_2d_act = {action_key: poses_valid_2d[action_key]}
+        act_dataset = PoseUnchunkedDataset(poses_valid_2d, poses_valid, None, None,
+                                        pad=0, 
+                                        causal_shift=0, augment=False,
                                         kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
                                         joints_right=joints_right)
         
@@ -425,22 +428,27 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
     else:
         if train_dataset == test_dataset:
             dataset = _load_dataset(cfg)
-            keypoints_2d, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
-
-            # 对齐长度 & 归一化
-            if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):
-                _align_kp_and_mocap_lengths(dataset, keypoints_2d)
-            _normalize_keypoints(dataset, keypoints_2d)
-
-            # 划分 subject
-            subjects_train, subjects_semi, subjects_test = _build_splits(cfg)  
-            
             build_data_bundle_test = eval(f"build_data_bundle_test_{test_dataset}")
             if test_dataset == "H36M":
+                keypoints_2d, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
+
+                # 对齐长度 & 归一化
+                if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):
+                    _align_kp_and_mocap_lengths(dataset, keypoints_2d)
+                _normalize_keypoints(dataset, keypoints_2d)
+
+                # 划分 subject
+                subjects_train, subjects_semi, subjects_test = _build_splits(cfg)  
+                
                 all_actions, action_filter = get_all_actions_by_subject(cfg, dataset, subjects_test)
                 bundle_list = build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, dataset, keypoints_2d, \
                                                     all_actions, action_filter, PoseUnchunkedDataset=UnchunkDataset)
             elif test_dataset == "3DHP":
+                data_train, data_test, kps_left, kps_right = dataset.data_train, dataset.data_test, dataset.kps_left, dataset.kps_right
+                joints_left, joints_right = kps_left, kps_right
+                poses_train, poses_train_2d, poses_valid, poses_valid_2d   = _load_keypoints_3DHP(data_train, data_test)
+                cameras_train, cameras_valid = None, None
+                action_train, action_valid = None, None
                 all_actions, action_filter = {}, None
                 bundle_list = build_data_bundle_test(cfg, kps_left, kps_right, joints_left, joints_right, poses_valid, poses_valid_2d, \
                                                     all_actions, action_filter, PoseUnchunkedDataset=UnchunkDataset)

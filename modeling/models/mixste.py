@@ -318,8 +318,8 @@ class  MixSTE(nn.Module):
         if istrain:
             # return predicted_3d_pos
             training_feat = {
-                            "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d },        # 键名要等于 cfg.LOSS[*].log_prefix
-                            "mpjpe": { "pred": predicted_3d_pos, "gt": inputs_3d, "boneindex": self.boneindex},
+                            "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d},        
+                            # "dis_mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d, "boneindex": self.boneindex}, 
                         }
             return training_feat
         else:

@@ -567,8 +567,8 @@ class D3DP(nn.Module):
 
             # return pred_pose
             training_feat = {
-                            # "mpjpe": { "pred": pred_pose, "target": inputs_3d},        
-                            "mpjpe": { "pred": pred_pose, "gt": inputs_3d, "boneindex": self.boneindex},        
+                            "mpjpe": { "pred": pred_pose, "target": inputs_3d},        
+                            # "dis_mpjpe": { "pred": pred_pose, "target": inputs_3d, "boneindex": self.boneindex},        
                         }
             return training_feat
 

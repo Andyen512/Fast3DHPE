@@ -66,7 +66,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_PoseFormer_lr0004_lrd990_dismpjpe_torch23"    # 保存路径的一部分
+  save_name: "h36m_PoseFormer_lr001_lrd980_dismpjpe_torch23"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: False
   log_interval: 50

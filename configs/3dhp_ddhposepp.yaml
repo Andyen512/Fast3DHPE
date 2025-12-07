@@ -18,7 +18,8 @@ DATASET:
 
   Test:
     actions: '*'   
-    P2: True         
+    P2: True    
+    Eval_type: 'JPMA'     
 
 # ========= 模型部分 =========
 MODEL:

@@ -265,6 +265,7 @@ class PoseUnchunkedDataset_3DHP(Dataset):
         cam_data_2 = [1920, 1080, 10, 5.625]  # width, height, sensorSize_x, sensorSize_y
         self.cam_1 = cam_mm_to_pix(cam_1, cam_data_1)
         self.cam_2 = cam_mm_to_pix(cam_2, cam_data_2)
+        self.skeleton = None
 
 
     def __len__(self):
@@ -305,5 +306,5 @@ class PoseUnchunkedDataset_3DHP(Dataset):
             chunk_2d[1, :, :, 0] *= -1
             chunk_2d[1, :, self.kps_left + self.kps_right] = chunk_2d[1, :, self.kps_right + self.kps_left]
 
-        return cam, chunk_3d, chunk_2d, seq_name, None
+        return cam, chunk_3d, chunk_2d, seq_name, 0
 
