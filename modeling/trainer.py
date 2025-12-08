@@ -336,30 +336,25 @@ class Trainer:
                 return
 
             if eval_type == 'JPMA':
-                # 3DHP + JPMA：evaluate 会多返回 pck/auc
+                # 3DHP + JPMA：
+                #  - MPJPE 的 step-wise 日志在 evaluate 里已经打印
+                #  - 四种 hypothesis 的结果也在 evaluate 里保存为 .mat
                 if cfg['DATASET']['Test']['P2']:
-                    e1, e1_h, e1_mean, e1_select, \
-                    e2, e2_h, e2_mean, e2_select, \
-                    pck, auc = evaluate(
+                    _ = evaluate(
                         cfg, test_loader, model_pos=model,
                         kps_left=kps_left, kps_right=kps_right,
                         joints_left=joints_left, joints_right=joints_right,
                         action=None, logger=self.logger
                     )
                 else:
-                    e1, e1_h, e1_mean, e1_select, \
-                    pck, auc = evaluate(
+                    _ = evaluate(
                         cfg, test_loader, model_pos=model,
                         kps_left=kps_left, kps_right=kps_right,
                         joints_left=joints_left, joints_right=joints_right,
                         action=None, logger=self.logger
                     )
 
-                if is_main_process() and pck is not None and auc is not None:
-                    self.logger.info("========== 3DHP JPMA overall ==========")
-                    self.logger.info("3DHP PCK (overall, JPMA): %.2f",  pck)
-                    self.logger.info("3DHP AUC (overall, JPMA): %.4f", auc)
-                    self.logger.info("========================================")
+                # evaluate 内部已经完成日志和 .mat 保存，这里直接返回即可
                 return
 
             elif eval_type == 'Normal':
@@ -471,7 +466,7 @@ class Trainer:
             elif eval_type == 'Normal':
                 # 所有数据集在 Normal 下都按 6 个返回值解包；
                 # 对非 3DHP，evaluate 会返回 pck=auc=None
-                e1, e2, e3, ev, pck, auc = evaluate(
+                e1, e2, e3, ev = evaluate(
                     cfg, test_loader, model_pos=model,
                     kps_left=kps_left, kps_right=kps_right,
                     joints_left=joints_left, joints_right=joints_right,
@@ -483,9 +478,6 @@ class Trainer:
                 errors_p3.append(torch.as_tensor(e3, dtype=torch.float32))
                 errors_vel.append(torch.as_tensor(ev, dtype=torch.float32))
 
-                if pck is not None and auc is not None:
-                    errors_pck.append(torch.as_tensor(pck, dtype=torch.float32))
-                    errors_auc.append(torch.as_tensor(auc, dtype=torch.float32))
 
         # ---------- JPMA 聚合（H36M 等） ----------
         if eval_type == 'JPMA':
@@ -540,8 +532,3 @@ class Trainer:
                                 torch.mean(torch.stack(errors_p3)).item())
                 self.logger.info('Velocity      (MPJVE) action-wise average: %.2f mm',
                                 torch.mean(torch.stack(errors_vel)).item())
-                if len(errors_pck) > 0:
-                    self.logger.info('PCK action-wise average: %.2f',
-                                    torch.mean(torch.stack(errors_pck)).item())
-                    self.logger.info('AUC action-wise average: %.4f',
-                                    torch.mean(torch.stack(errors_auc)).item())

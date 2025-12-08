@@ -51,7 +51,7 @@ def main():
             bundle_list = build_data_bundle(cfg, training=False)
             bundle = bundle_list[0]  # 随便取一个，主要是为了拿到 skeleton/joints 信息
 
-    skeleton = bundle.dataset.skeleton if bundle.dataset.skeleton is not None else None
+    skeleton = bundle.dataset.skeleton() if bundle.dataset.skeleton is not None else None
     # 构建模型
     model_name = cfg["MODEL"]["name"]
     Model = getattr(models, model_name)    

@@ -11,6 +11,7 @@ from .skeleton import Skeleton
 class MocapDataset:
     def __init__(self, fps=None, skeleton=None):
         self._skeleton = skeleton
+
         self._fps = fps
         self._data = None # Must be filled by subclass
         self._cameras = None # Must be filled by subclass

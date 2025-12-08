@@ -23,6 +23,7 @@ DATASET:
   Test:
     actions: '*'   
     P2: True         
+    Eval_type: 'JPMA' 
 
 # ========= 模型部分 =========
 MODEL:
@@ -75,8 +76,8 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_ddhpose2_lr00015_lrd995_torch23_pos"    # 保存路径的一部分
-  amp: true                    # 自动混合精度
+  save_name: "h36m_ddhpose2_lr00015_lrd995_torch23_pos_noamp"    # 保存路径的一部分
+  amp: false                    # 自动混合精度
   find_unused_parameters: false
   log_interval: 50
   val_interval: 1

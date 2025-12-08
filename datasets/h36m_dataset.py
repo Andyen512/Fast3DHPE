@@ -230,7 +230,7 @@ h36m_cameras_extrinsic_params = {
 class Human36mDataset(MocapDataset):
     def __init__(self, path, cfg, remove_static_joints=True):
         super().__init__(fps=50, skeleton=h36m_skeleton)
-        
+
         self._cameras = copy.deepcopy(h36m_cameras_extrinsic_params)
         for cameras in self._cameras.values():
             for i, cam in enumerate(cameras):
