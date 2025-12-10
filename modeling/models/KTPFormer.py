@@ -745,7 +745,7 @@ class  KTPFormer(nn.Module):
 
     def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False, inputs_act=None):
         predicted_3d_pos = self.model_pos(inputs_2d)
-        
+
         if input_2d_flip is not None:
             predicted_3d_pos_flip = self.model_pos(input_2d_flip)
             predicted_3d_pos_flip[..., 0] *= -1
@@ -758,7 +758,7 @@ class  KTPFormer(nn.Module):
             # return predicted_3d_pos
             training_feat = {
                             "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d},        
-                            "dis_mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d, "boneindex": self.boneindex}, 
+                            # "dis_mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d, "boneindex": self.boneindex}, 
                             "diff_mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d},   
                         }
             return training_feat

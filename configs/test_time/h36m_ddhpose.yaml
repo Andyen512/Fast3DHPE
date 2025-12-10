@@ -20,70 +20,65 @@ DATASET:
   dataset_type: 'seq2seq'
   frame_stride: 1
 
-
   Test:
     actions: '*'   
-    P2: True     
-    Eval_type: 'Normal'    
+    P2: True         
+    Eval_type: 'JPMA' 
 
 # ========= 模型部分 =========
 MODEL:
-  name: "KTPFormer"
+  name: "DDHPose"
   backbone:
     num_frame: 243   # 对齐数据长度
     num_joints: 17
-    in_chans: 2                     # 输入通道（2D坐标 → x,y）
+    in_chans: 6                     # 输入通道（2D坐标 → x,y）
     embed_dim_ratio: 512
     depth: 8
     num_heads: 8
     mlp_ratio: 2.0
     qkv_bias: True
-    qk_scale: 
     drop_rate: 0.
     attn_drop_rate: 0.
     drop_path_rate: 0.2
-    norm_layer: 
+    is_train: True
+    test_time_augmentation: True
+    timestep: 1000
+    scale: 1
+    num_proposals: 1
+    sampling_timesteps: 1
     boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
 
 # ========= 损失 =========
-# LOSS:
-#   type: "MPJPELoss"
-#   log_prefix: "mpjpe"
-#   loss_term_weight: 1.0
-
 LOSS:
   - type: "MPJPELoss"
     log_prefix: "mpjpe"
-    use_weight: True
-    joint_weight: [1, 1, 2.5, 2.5, 1, 2.5, 2.5, 1, 1, 1, 1.5, 1.5, 4, 4, 1.5, 4, 4]
     loss_term_weight: 1.0
-  # - type: "Dis_MPJPELoss"
-  #   log_prefix: "dis_mpjpe"
+  - type: "Dis_MPJPELoss"
+    log_prefix: "dis_mpjpe"
+    loss_term_weight: 1.0
+    boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
+  # - type: "TemporalConsistencyLoss"
+  #   log_prefix: "diff_mpjpe"
   #   loss_term_weight: 1.0
-  #   boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
-  - type: "TemporalConsistencyLoss"
-    log_prefix: "diff_mpjpe"
-    loss_term_weight: 1.0
-    dataset: "H36M"
-
+  #   dataset: "H36M"
 
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00025
+  lr: 0.0001
   weight_decay: 0.1
   lr_decay: 0.990
 
 SCHED:
   name: "Cosine"
   warmup_epochs: 5
-  max_epochs: 400
+  max_epochs: 3
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_KTPFormer_test_time"    # 保存路径的一部分
+  save_name: "h36m_DDHPose_test_time"    # 保存路径的一部分
   amp: true                    # 自动混合精度
-  find_unused_parameters: false
+  find_unused_parameters: true
   log_interval: 50
   val_interval: 1
   save_freq: 200

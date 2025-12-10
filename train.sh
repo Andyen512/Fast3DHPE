@@ -25,9 +25,17 @@ while true; do
     # 如果所有GPU都空闲，执行训练命令
     if $all_gpus_idle; then
         echo "All GPUs are idle. Starting training..."
+        CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14622 --nproc_per_node=8 main.py  --cfg ./configs/test_time/h36m_ddhpose.yaml  --phase train --log_to_file
         # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 torchrun --nproc_per_node=8 opengait/main.py --cfgs ./configs/dronegait2/gaitbase_multi_view_loss.yaml --phase train --log_to_file
-        CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14623 --nproc_per_node=8 main.py  --cfg ./configs/h36m_D3DP.yaml  --phase train --log_to_file
-        # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14623 --nproc_per_node=8 main.py  --cfg ./configs/h36m_D3DP.yaml  --phase train --log_to_file
+        # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14622 --nproc_per_node=8 main.py  --cfg ./configs/test_time/h36m_D3DP.yaml  --phase train --log_to_file
+        # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14622 --nproc_per_node=8 main.py  --cfg ./configs/test_time/h36m_FinePOSE.yaml  --phase train --log_to_file
+        # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14622 --nproc_per_node=8 main.py  --cfg ./configs/test_time/h36m_KTPFormer.yaml  --phase train --log_to_file
+        # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14622 --nproc_per_node=8 main.py  --cfg ./configs/test_time/h36m_MHFormer.yaml  --phase train --log_to_file
+        # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14622 --nproc_per_node=8 main.py  --cfg ./configs/test_time/h36m_mixste2.yaml  --phase train --log_to_file
+        # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14622 --nproc_per_node=8 main.py  --cfg ./configs/test_time/h36m_PoseFormer.yaml  --phase train --log_to_file
+        # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14622 --nproc_per_node=8 main.py  --cfg ./configs/test_time/h36m_PoseFormerV2.yaml  --phase train --log_to_file
+        # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14622 --nproc_per_node=8 main.py  --cfg ./configs/test_time/h36m_STCFormer.yaml  --phase train --log_to_file
+        # CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 14622 --nproc_per_node=8 main.py  --cfg ./configs/test_time/h36m_VideoPose3D.yaml  --phase train --log_to_file
         # 假设只想运行一次训练任务，运行后退出循环
         break
         # 如果想在任务完成后继续监控，不要加 break，而是等待下一个间隔

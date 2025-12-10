@@ -15,7 +15,7 @@ DATASET:
   Root_idx: 0
   Cross_Dataset: False
   test_dataset: H36M
-  dataset_type: 'seq2frame'
+  dataset_type: 'seq2seq'
   frame_stride: 1
 
 

@@ -8,9 +8,9 @@ DATASET:
   subjects_test: "S9,S11"             # 半监督用的（可空）
   downsample: 1                  # 全局下采样因子
   subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
-  receptive_field: 27
+  receptive_field: 243
   chunk_size: 1
-  batch_size: 128
+  batch_size: 768
   stride: 1
   Root_idx: 0
   Cross_Dataset: False
@@ -27,7 +27,7 @@ DATASET:
 MODEL:
   name: "PoseFormerV2"
   backbone:
-    num_frame: 27   # 对齐数据长度
+    num_frame: 243   # 对齐数据长度
     num_joints: 17
     in_chans: 2                     # 输入通道（2D坐标 → x,y）
     embed_dim_ratio: 32
@@ -58,11 +58,11 @@ OPTIM:
 SCHED:
   name: "Cosine"
   warmup_epochs: 5
-  max_epochs: 400
+  max_epochs: 3
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_PoseFormerV2_lr000040_lrd990_f3_torch23"    
+  save_name: "h36m_PoseFormerV2_test_time"    
   amp: false                    # 自动混合精度
   find_unused_parameters: False
   log_interval: 50

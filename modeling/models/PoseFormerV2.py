@@ -230,7 +230,7 @@ class  PoseFormerV2(nn.Module):
         
     def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False, inputs_act=None):
         predicted_3d_pos = self.model_pos(inputs_2d)
-        
+
         if input_2d_flip is not None:
             predicted_3d_pos_flip = self.model_pos(input_2d_flip)
             predicted_3d_pos_flip[..., 0] *= -1

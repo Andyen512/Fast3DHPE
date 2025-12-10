@@ -784,10 +784,11 @@ class  FinePOSE(nn.Module):
 
             # pred_pose = self.pose_estimator(inputs_2d, x_poses, t, self.is_train)
             pred_pose = self.pose_estimator(inputs_2d, x_poses, t, self.is_train, input_text, pre_text_tensor_train)
+
             # return pred_pose
             training_feat = {
                             "mpjpe": { "pred": pred_pose, "target": inputs_3d},       
-                            "dis_mpjpe": { "pred": pred_pose, "target": inputs_3d, "boneindex": self.boneindex},
+                            # "dis_mpjpe": { "pred": pred_pose, "target": inputs_3d, "boneindex": self.boneindex},
                         }
             return training_feat
         

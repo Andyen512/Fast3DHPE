@@ -77,7 +77,7 @@ OPTIM:
 SCHED:
   name: "Cosine"
   warmup_epochs: 5
-  max_epochs: 400
+  max_epochs: 3
 
 # ========= 训练引擎 =========
 ENGINE:

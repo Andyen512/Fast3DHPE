@@ -172,7 +172,6 @@ class Trainer:
                     loss_total.backward()
                     self.optimizer.step()
 
-
                 bs, ts = inputs_3d.shape[0], inputs_3d.shape[1]
                 epoch_loss_3d_train     += (bs * ts) * loss_total.detach().float().item()
                 epoch_loss_3d_pos_train += (bs * ts) * loss_info["loss_3d_pos"].detach().float().item()
@@ -181,7 +180,6 @@ class Trainer:
                 iteration += 1
                 if quickdebug and N == (bs * ts):
                     break
-
 
             t = torch.tensor([epoch_loss_3d_train, epoch_loss_3d_pos_train, float(N)],
                             device=device, dtype=torch.float32)
@@ -245,7 +243,7 @@ class Trainer:
                         del pred_3d, inputs_2d, inputs_2d_flip, inputs_3d
                         torch.cuda.empty_cache()
                         
-
+            
                 # ====== 分布式 all_reduce，同步到所有 GPU ======
                 dist.all_reduce(local_sum, op=dist.ReduceOp.SUM)
                 dist.all_reduce(local_cnt, op=dist.ReduceOp.SUM)

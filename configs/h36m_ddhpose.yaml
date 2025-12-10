@@ -27,7 +27,7 @@ DATASET:
 
 # ========= 模型部分 =========
 MODEL:
-  name: "DDHPosePP"
+  name: "DDHPose"
   backbone:
     num_frame: 243   # 对齐数据长度
     num_joints: 17
@@ -53,10 +53,10 @@ LOSS:
   - type: "MPJPELoss"
     log_prefix: "mpjpe"
     loss_term_weight: 1.0
-  # - type: "Dis_MPJPELoss"
-  #   log_prefix: "dis_mpjpe"
-  #   loss_term_weight: 1.0
-  #   boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
+  - type: "Dis_MPJPELoss"
+    log_prefix: "dis_mpjpe"
+    loss_term_weight: 1.0
+    boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
   # - type: "TemporalConsistencyLoss"
   #   log_prefix: "diff_mpjpe"
   #   loss_term_weight: 1.0
@@ -65,9 +65,9 @@ LOSS:
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00015
+  lr: 0.0001
   weight_decay: 0.1
-  lr_decay: 0.995
+  lr_decay: 0.990
 
 SCHED:
   name: "Cosine"
@@ -76,9 +76,9 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "h36m_ddhpose2_lr00015_lrd995_torch23_pos_noamp"    # 保存路径的一部分
-  amp: false                    # 自动混合精度
-  find_unused_parameters: false
+  save_name: "h36m_DDHPose_test_time"    # 保存路径的一部分
+  amp: true                    # 自动混合精度
+  find_unused_parameters: true
   log_interval: 50
   val_interval: 1
   save_freq: 200
