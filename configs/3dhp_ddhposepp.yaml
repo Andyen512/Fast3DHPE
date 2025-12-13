@@ -51,9 +51,8 @@ LOSS:
     loss_term_weight: 1.0
   - type: "Dis_MPJPELoss"
     log_prefix: "dis_mpjpe"
-    loss_term_weight: 1.0
+    loss_term_weight: 1.5
     boneindextemp: '1,0,15,1,1,2,2,3,3,4,1,5,5,6,6,7,14,8,8,9,9,10,14,11,11,12,12,13,14,15,1,16'
-
 
 # ========= 优化器 & 学习率 =========
 OPTIM:
@@ -69,8 +68,8 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "3dhp_ddhposepp_lr00015_lrd993_2_torch23_pos_dis_diffloss_bs1024"    # 保存路径的一部分
-  amp: false                    # 自动混合精度
+  save_name: "3dhp_ddhposepp_lr00015_lrd993_2_torch23_pos10_dis15_bs1024"    # 保存路径的一部分
+  amp: true                    # 自动混合精度
   find_unused_parameters: false
   log_interval: 50
   val_interval: 1
