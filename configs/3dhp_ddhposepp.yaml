@@ -8,7 +8,7 @@ DATASET:
   subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
   receptive_field: 243
   chunk_size: 243
-  batch_size: 768
+  batch_size: 1024
   stride: 243
   Root_idx: 14
   Cross_Dataset: False
@@ -51,15 +51,15 @@ LOSS:
     loss_term_weight: 1.0
   - type: "Dis_MPJPELoss"
     log_prefix: "dis_mpjpe"
-    loss_term_weight: 1.5
+    loss_term_weight: 1.0
     boneindextemp: '1,0,15,1,1,2,2,3,3,4,1,5,5,6,6,7,14,8,8,9,9,10,14,11,11,12,12,13,14,15,1,16'
 
 # ========= 优化器 & 学习率 =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00015
+  lr: 0.000200
   weight_decay: 0.1
-  lr_decay: 0.993
+  lr_decay: 0.990
 
 SCHED:
   name: "Cosine"
@@ -68,7 +68,7 @@ SCHED:
 
 # ========= 训练引擎 =========
 ENGINE:
-  save_name: "3dhp_ddhposepp_lr00015_lrd993_2_torch23_pos10_dis15_bs1024"    # 保存路径的一部分
+  save_name: "3dhp_ddhposepp_lr000200_lrd990_2_torch23_pos_dis_wl001_wd1_bs1024"    # 保存路径的一部分
   amp: true                    # 自动混合精度
   find_unused_parameters: false
   log_interval: 50

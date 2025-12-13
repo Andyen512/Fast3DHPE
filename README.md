@@ -1,4 +1,7 @@
 # Fast3DHPE
+<p align="center">
+  <img src="readme_main.gif" width="800">
+</p>
 The PyTorch implementation for ["From DDHPose++ to Fast3DHPE: Toward a Unified and Efficient Framework for 3D Human Pose Estimation"](https://ojs.aaai.org/index.php/AAAI/article/view/27847).  
 
 [![arXiv](https://img.shields.io/badge/arXiv-2403.04444-b31b1b.svg)](https://arxiv.org/abs/2403.04444) 

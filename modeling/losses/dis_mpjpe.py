@@ -59,7 +59,7 @@ class Dis_MPJPELoss(nn.Module):
         loss_dir = torch.pow(gt_dir - pd_dir, 2).sum(3).mean()
 
         # loss_total = loss_3d_pos + loss_length + loss_dir
-        loss_dis = loss_length + loss_dir
+        loss_dis = 0.001*loss_length + loss_dir
 
         return loss_dis, {"loss_dis": loss_dis}
                     #    "loss_3d_pos": loss_3d_pos}
