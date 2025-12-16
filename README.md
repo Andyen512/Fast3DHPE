@@ -3,7 +3,7 @@
   <img src="readme_main.gif"> 
 </p>
 
-**Fast3DHPE** is a user-friendly and flexible repository that aims to help researchers get started on **3D Human Pose Estimation** quickly.  
+**Fast3DHPE** is a unified and efficient repository designed to help researchers quickly get started with **3D Human Pose Estimation**, providing a consistent framework for training, evaluation, and comparison across multiple representative methods.
 This repository is supported by [BNU-IVC](https://github.com/BNU-IVC) and [WATRIX.AI](http://www.watrix.ai).
 
 ## 🆕 What's New
