@@ -123,7 +123,7 @@ class Attention_xxc(nn.Module):
         else:
             logits = (q @ k.transpose(-2, -1)) * self.scale   # [bs,H,N,N]
 
-        # ---- 多跳关系偏置（注意变量名不要叫 B）----
+        # ---- Multi-hop relational bias (avoid naming the variable 'B') ----
         if (Hstack is not None) and (hop_logits_attn is not None):
             Hstack = Hstack.to(logits.device)                      # [K,N,N]
             H = logits.shape[1]
@@ -138,7 +138,7 @@ class Attention_xxc(nn.Module):
             else:
                 attn_bias = B_head.unsqueeze(0)                   # [1,H,N,N]
             logits = logits + attn_bias
-        # ---- 偏置结束 ----
+        # ---- End of bias injection ----
 
         attn = logits.softmax(dim=-1)
         attn = self.attn_drop(attn)
@@ -229,8 +229,8 @@ class Block_xxc(nn.Module):
 
     def forward(self, x, xc=None, vis=False,
                 Hstack=None, hop_logits_attn=None, rel_alpha=None):
-        # 注意：self.attn 的 forward 里已经按我们之前说的支持这三个参数，
-        # 并在 softmax 之前把偏置加到 logits 上
+        # Note: self.attn.forward already supports these three arguments
+        # and adds the bias to logits before softmax
 
         if xc is None:
             x = x + self.drop_path(
@@ -249,7 +249,7 @@ class Block_xxc(nn.Module):
                     self.norm1(x),
                     self.norm1(xc),
                     vis=vis,
-                    Hstack=Hstack,                # 直接透传
+                    Hstack=Hstack,                # Pass through directly
                     hop_logits_attn=hop_logits_attn,
                     rel_alpha=rel_alpha,
                 )
@@ -320,13 +320,13 @@ class  KHSTDenoiser(nn.Module):
             nn.Linear(embed_dim_ratio*2, embed_dim_ratio),
         )
 
-        # ---------- 构图：无向、无自环 ----------
+        # ---------- Graph construction: undirected, no self-loops ----------
         def chains_to_pairs(chains):
             pairs = set()
             for chain in chains:
                 for i in range(len(chain)-1):
                     a, b = chain[i], chain[i+1]
-                    pairs.add((a, b)); pairs.add((b, a))   # 无向
+                    pairs.add((a, b)); pairs.add((b, a))   # Undirected
             return sorted(list(pairs))
 
         self.group = nn.Parameter(torch.zeros(1, 6, embed_dim))
@@ -371,31 +371,31 @@ class  KHSTDenoiser(nn.Module):
             if i != j:
                 M[i, j] = 1.0
 
-        # ---------- hop 掩码（互斥的 H1/H2/H3）+ 计算 ≥4-hop ----------
+        # ---------- Hop masks (mutually exclusive H1/H2/H3) + compute ≥4-hop ----------
         def hop_masks_with_gt(M, K=3):
-            A = (M > 0).float()       # 一跳（无自环）
+            A = (M > 0).float()       # One-hop (no self-loops)
             hops = []
-            reach = torch.eye(A.size(0))  # 已可达（含 0-hop 自己）
-            P = A.clone()                 # 当前幂（k-hop 内的可达）
+            reach = torch.eye(A.size(0))  # Reachable set (including 0-hop self)
+            P = A.clone()                 # Current power (reachable within k hops)
 
             for _ in range(1, K+1):
                 Rk = (P > 0).float()                             # ≤k-hop
-                Hk = (Rk - (reach > 0).float()).clamp(min=0.0)   # 正好 k-hop
+                Hk = (Rk - (reach > 0).float()).clamp(min=0.0)   # Exactly k-hop
                 Hk.fill_diagonal_(0.0)
                 hops.append(Hk)
-                reach = ((reach > 0) | (Rk > 0)).float()         # 累计 ≤k-hop
-                P = (P @ A > 0).float()                          # 下一跳
+                reach = ((reach > 0) | (Rk > 0)).float()         # Accumulate ≤k-hop
+                P = (P @ A > 0).float()                          # Next hop
 
-            # 传递闭包：求“所有可达”
+            # Transitive closure: compute global reachability
             R_all = reach.clone()
             P_tc = P.clone()
-            for _ in range(N):  # 上界 N 即可收敛（N=17）
+            for _ in range(N):  # Upper bound N ensures convergence (N=17)
                 R_all_next = ((R_all > 0) | (P_tc > 0)).float()
                 if torch.equal(R_all_next, R_all): break
                 R_all = R_all_next
                 P_tc = (P_tc @ A > 0).float()
 
-            # ≥(K+1)-hop = 所有可达 - (I + H1 + ... + HK)
+            # ≥(K+1)-hop = reachable_all - (I + H1 + ... + HK)
             sum_low = torch.eye(N)
             for Hk in hops:
                 sum_low = ((sum_low > 0) | (Hk > 0)).float()
@@ -406,12 +406,12 @@ class  KHSTDenoiser(nn.Module):
 
         H1, H2, H3, Hgt = hop_masks_with_gt(M, K=3)
 
-        # ---- 关键变化：不做 row_normalize，不注册 A*，而是注册 Hstack ----
+        # ---- Key change: no row normalization or A*, register Hstack instead ----
         self.register_buffer("Hstack", torch.stack([H1, H2, H3, Hgt], dim=0), persistent=False)  # [4,N,N]
 
-        # 每个 head 的 hop 权重（4 桶），softmax 后相加为 1
+        # Hop weights per head (4 buckets) summed via softmax
         self.hop_logits_attn = nn.Parameter(torch.zeros(num_heads, 4))    # [H,4]
-        # 每个 head 的整体强度 α（初始化小一点更稳）
+        # Overall strength α per head (small init is more stable)
         self.rel_alpha = nn.Parameter(0.1 * torch.ones(num_heads))         # [H]
 
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
@@ -490,11 +490,11 @@ class  KHSTDenoiser(nn.Module):
 
         blk = self.STEblocks_0[0]
         x = blk(x)
-        # # 给空间注意力传入多跳关系先验
+        # # Inject multi-hop priors into spatial attention
         # x = blk(
         #     x,
         #     Hstack=self.Hstack,                   # [4, N, N]：H1/H2/H3/Hgt
-        #     hop_logits_attn=self.hop_logits_attn, # [num_heads, 4] 或 [4]
+        #     hop_logits_attn=self.hop_logits_attn, # [num_heads, 4] or [4]
         #     rel_alpha=self.rel_alpha,             # [num_heads]
         # )
         # x = blk(x, vis=True)
@@ -524,24 +524,24 @@ class  KHSTDenoiser(nn.Module):
             steblock = self.STEblocks[i]
             tteblock = self.TTEblocks[i]
 
-            # 给空间注意力传入多跳关系先验
+            # Inject multi-hop priors into spatial attention
             x = steblock(
                 x,
-                Hstack=self.Hstack,                   # [4, N, N]：H1/H2/H3/Hgt
-                hop_logits_attn=self.hop_logits_attn, # [num_heads, 4] 或 [4]
+                Hstack=self.Hstack,                   # [4, N, N]: H1/H2/H3/Hgt
+                hop_logits_attn=self.hop_logits_attn, # [num_heads, 4] or [4]
                 rel_alpha=self.rel_alpha,             # [num_heads]
             )
             x = self.Spatial_norm(x)
             x = rearrange(x, '(b f) n cw -> (b n) f cw', f=f)
 
-            # 时间注意力先不加先验（做空间消融更稳）
+            # Skip priors for temporal attention (stabilizes spatial ablation)
             x = tteblock(x)
             x = self.Temporal_norm(x)
             x = rearrange(x, '(b n) f cw -> b f n cw', n=n)
 
         return x
 
-    # 在经过STE（把STE中包含的HRST去掉）和TTE后分出xc， 后7层都用同样的Block_xxc
+    # After STE (removing HRST) and TTE to obtain xc, the last 7 layers reuse Block_xxc
     def forward(self, x_2d, x_3d_dir, x_3d_bone, t, istrain):
         self.is_train = istrain
         x_3d = torch.cat((x_3d_dir,x_3d_bone), dim=-1)

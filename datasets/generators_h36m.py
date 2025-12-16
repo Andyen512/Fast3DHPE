@@ -110,7 +110,7 @@ class PoseChunkDataset_H36M(Dataset):
                     cam[2] *= -1
                     cam[7] *= -1
             else:
-                cam = np.zeros_like(chunk_3d)  # 占位，保持一致
+                cam = np.zeros_like(chunk_3d)  # Placeholder to keep shapes aligned
 
             action = self.action[seq_i]  # Ensure ndarray
             return cam, chunk_3d, chunk_2d, action
@@ -209,7 +209,7 @@ class PoseUnchunkedDataset_H36M(Dataset):
         if self.cameras is not None:
             cam = np.expand_dims(self.cameras[idx], axis=0)
         else:
-            cam = np.zeros_like(chunk_3d)  # 占位，保持一致
+            cam = np.zeros_like(chunk_3d)  # Placeholder to keep shapes aligned
             cam = np.expand_dims(cam, axis=0)
 
         if self.augment:
@@ -260,9 +260,9 @@ class PoseUnchunkedDataset_H36M(Dataset):
 #         seq_3d = None if self.poses_3d is None else self.poses_3d[idx]   # (T, J, 3) or None
 #         cam    = None if self.cameras  is None else self.cameras[idx]    # (C,)
 
-#         # ===================== seq2seq 模式 =====================
+#         # ===================== seq2seq mode =====================
 #         if self.dataset_type == 'seq2seq':
-#             # 2D / 3D 都不 pad，直接整段
+#             # No padding for 2D/3D; use the entire sequence
 #             chunk_2d = np.expand_dims(seq_2d, axis=0)  # (1, T, J, 2)
 #             chunk_3d = None
 #             if seq_3d is not None:
@@ -271,9 +271,9 @@ class PoseUnchunkedDataset_H36M(Dataset):
 #             if cam is not None:
 #                 cam = np.expand_dims(cam, axis=0)          # (1, C)
 
-#         # ===================== seq2frame 模式 =====================
+#         # ===================== seq2frame mode =====================
 #         else:
-#             # 和 UnchunkedGenerator 一样：2D 两端 pad，3D 原长度
+#             # Same as UnchunkedGenerator: pad both 2D ends and keep 3D length
 #             # 2D: pad in time dimension
 #             start_pad = self.pad + self.causal_shift
 #             end_pad   = self.pad - self.causal_shift

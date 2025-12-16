@@ -242,7 +242,7 @@ class  PoseFormerV2(nn.Module):
         if istrain:
             # return predicted_3d_pos
             training_feat = {
-                            "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d },        # 键名要等于 cfg.LOSS[*].log_prefix
+                            "mpjpe": { "pred": predicted_3d_pos, "target": inputs_3d },        # Key must equal cfg.LOSS[*].log_prefix
                         }
             return training_feat
         else:

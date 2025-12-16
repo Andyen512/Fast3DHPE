@@ -4,16 +4,16 @@ from einops import rearrange
 
 class MPJPELoss(nn.Module):
     """
-    支持两种输入：
-    Case A (标注级 MPJPE):
+    Supports two input formats:
+    Case A (annotation-level MPJPE):
         pred: [B, T, J, 3]
         gt:   [B, T, J, 3]
-        -> 返回: (loss_scalar, info)
+        -> Returns: (loss_scalar, info)
 
-    Case B (多采样/多头对齐):
+    Case B (multi-sample / multi-head alignment):
         pred: [B, T, H, F, N, 3]
         gt:   [B, F, N, 3]
-        -> 返回: (loss_th, info)，其中 loss_th 形状 [T, H]
+        -> Returns: (loss_th, info) where loss_th has shape [T, H]
     """
     def __init__(
         self,

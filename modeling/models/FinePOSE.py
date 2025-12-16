@@ -760,7 +760,7 @@ class  FinePOSE(nn.Module):
         cleaned_act = [s.split(" ")[0] for s in inputs_act]
         input_text_list = []
         for act in cleaned_act:
-            tmp_text = encode_text1(act)   # 假设返回的是 [1, D] 之类的 Tensor
+            tmp_text = encode_text1(act)   # Assume it returns a tensor shaped like [1, D]
             input_text_list.append(tmp_text)
 
 

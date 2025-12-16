@@ -40,24 +40,24 @@ def main():
     rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
     set_seed(cfg.get("RUNTIME", {}).get("seed", 1))
     
-    # 训练数据
+    # Training data
     if args.phase == "train":
         bundle = build_data_bundle(cfg, training=True)
     else:
         if cfg["DATASET"]["train_dataset"] == cfg["DATASET"]["test_dataset"]:
             bundle_list = build_data_bundle(cfg, training=False)
-            bundle = bundle_list[0]  # 随便取一个，主要是为了拿到 skeleton/joints 信息
+            bundle = bundle_list[0]  # Take any bundle to fetch skeleton/joint info
         else:
             bundle_list = build_data_bundle(cfg, training=False)
-            bundle = bundle_list[0]  # 随便取一个，主要是为了拿到 skeleton/joints 信息
+            bundle = bundle_list[0]  # Take any bundle to fetch skeleton/joint info
 
     skeleton = bundle.dataset.skeleton() if bundle.dataset.skeleton is not None else None
-    # 构建模型
+    # Build model
     model_name = cfg["MODEL"]["name"]
     Model = getattr(models, model_name)    
     model = Model(**cfg["MODEL"]["backbone"], joints_left=bundle.joints_left, joints_right=bundle.joints_right, \
                   rootidx=cfg["DATASET"]["Root_idx"], dataset_skeleton=skeleton)
-    # 设备 & DDP
+    # Device & DDP
 
     model = model.to(device)
     model = torch.nn.parallel.DistributedDataParallel(

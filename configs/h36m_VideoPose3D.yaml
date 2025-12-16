@@ -1,13 +1,13 @@
-# ========= 数据集部分 =========
+# ========= Dataset =========
 DATASET:
-  train_dataset: "H36M"                   # 数据集名称，会影响加载路径
-  root: "data"                   # 存放 data_3d_h36m.npz / data_2d_h36m_xxx.npz 的目录
-  keypoints: "cpn_ft_h36m_dbb"   # 你用的 2D 关键点检测器名字
-  subjects_train: "S1,S5,S6,S7,S8"   # 训练 subject
-  subjects_unlabeled:  ""           # 测试 subject
-  subjects_test: "S9,S11"             # 半监督用的（可空）
-  downsample: 1                  # 全局下采样因子
-  subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
+  train_dataset: "H36M"                   # Dataset name, affects load path
+  root: "data"                   # Directory containing data_3d_h36m.npz / data_2d_h36m_xxx.npz
+  keypoints: "cpn_ft_h36m_dbb"   # Name of the 2D keypoint detector you use
+  subjects_train: "S1,S5,S6,S7,S8"   # Training subjects
+  subjects_unlabeled:  ""           # Test subjects
+  subjects_test: "S9,S11"             # For semi-supervised use (optional)
+  downsample: 1                  # Global downsampling factor
+  subset: 1.0                    # Subset ratio (use <1.0 for small-sample experiments)
   receptive_field: 27
   chunk_size: 1
   batch_size: 2048
@@ -24,12 +24,12 @@ DATASET:
     P2: True 
     Eval_type: 'Normal' 
 
-# ========= 模型部分 =========
+# ========= Model =========
 MODEL:
   name: "VideoPose3D"
   backbone:
     num_joints: 17
-    in_chans: 2                     # 输入通道（2D坐标 → x,y）
+    in_chans: 2                     # Input channels (2D coordinates x,y)
     embed_dim_ratio: 1024
     drop_path_rate: 0.25
     filter_widths: [3, 3, 3,]
@@ -38,14 +38,14 @@ MODEL:
     
     
 
-# ========= 损失 =========
+# ========= Loss =========
 LOSS:
   type: "MPJPELoss"
   log_prefix: "mpjpe"
   loss_term_weight: 1.0
 
 
-# ========= 优化器 & 学习率 =========
+# ========= Optimizer & Learning Rate =========
 OPTIM:
   name: "AdamW"
   lr: 0.001
@@ -57,16 +57,16 @@ SCHED:
   warmup_epochs: 5
   max_epochs: 200
 
-# ========= 训练引擎 =========
+# ========= Training Engine =========
 ENGINE:
-  save_name: "h36m_VideoPose3D_lr001_lrd950"    # 保存路径的一部分
-  amp: true                    # 自动混合精度
+  save_name: "h36m_VideoPose3D_lr001_lrd950"    # Part of the save path
+  amp: true                    # Automatic mixed precision
   find_unused_parameters: false
   log_interval: 50
   val_interval: 1
   save_freq: 200
 
-# ========= 运行时设置 =========
+# ========= Runtime Settings =========
 RUNTIME:
   seed: 1
 

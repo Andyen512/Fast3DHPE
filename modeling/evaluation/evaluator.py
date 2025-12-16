@@ -8,7 +8,7 @@ from scipy.io import savemat
 
 def eval_data_prepare(dataset_type, receptive_field, inputs_2d, inputs_3d):
 
-    # ----------- 公共部分 -----------
+    # ----------- Common logic -----------
     assert inputs_2d.shape[:-1] == inputs_3d.shape[:-1], \
         "2d and 3d inputs shape must be same! "+str(inputs_2d.shape)+str(inputs_3d.shape)
 
@@ -17,7 +17,7 @@ def eval_data_prepare(dataset_type, receptive_field, inputs_2d, inputs_3d):
     T = inputs_2d_p.shape[0]
 
     # ============================================================
-    #   A) seq2frame 模式：输入 RF 帧，输出中心帧（标准 PoseFormer）
+    #   A) seq2frame mode: input RF frames, output the center frame (PoseFormer style)
     # ============================================================
     if dataset_type == "seq2frame":
         out_num = T - receptive_field + 1
@@ -29,7 +29,7 @@ def eval_data_prepare(dataset_type, receptive_field, inputs_2d, inputs_3d):
             # 2D: sliding window
             eval_input_2d[i] = inputs_2d_p[i:i+receptive_field]
 
-            # 3D: 中心帧监督
+            # 3D: supervise the center frame
             center = i + receptive_field // 2
             eval_input_3d[i] = inputs_3d_p[center:center+1]
 
@@ -37,10 +37,10 @@ def eval_data_prepare(dataset_type, receptive_field, inputs_2d, inputs_3d):
 
 
     # ============================================================
-    #   B) seq2seq 模式：保持你原来的 chunked seq2seq（不动）
+    #   B) seq2seq mode: keep the original chunked seq2seq logic
     # ============================================================
     else:
-        # ---- 你的原始 seq2seq 逻辑，从这里开始完全不改 ----
+        # ---- Original seq2seq logic, unchanged from here ----
 
         if inputs_2d_p.shape[0] / receptive_field > inputs_2d_p.shape[0] // receptive_field: 
             out_num = inputs_2d_p.shape[0] // receptive_field + 1
@@ -50,12 +50,12 @@ def eval_data_prepare(dataset_type, receptive_field, inputs_2d, inputs_3d):
         eval_input_2d = torch.empty(out_num, receptive_field, inputs_2d_p.shape[1], inputs_2d_p.shape[2])
         eval_input_3d = torch.empty(out_num, receptive_field, inputs_3d_p.shape[1], inputs_3d_p.shape[2])
 
-        # 非重叠 chunk
+        # Non-overlapping chunks
         for i in range(out_num-1):
             eval_input_2d[i] = inputs_2d_p[i*receptive_field : i*receptive_field+receptive_field]
             eval_input_3d[i] = inputs_3d_p[i*receptive_field : i*receptive_field+receptive_field]
 
-        # 长度不足 RF → pad
+        # Pad if the sequence is shorter than the receptive field
         if inputs_2d_p.shape[0] < receptive_field:
             from torch.nn import functional as F
             pad_right = receptive_field - inputs_2d_p.shape[0]
@@ -69,7 +69,7 @@ def eval_data_prepare(dataset_type, receptive_field, inputs_2d, inputs_3d):
             inputs_3d_p = F.pad(inputs_3d_p, (0,pad_right), mode='replicate')
             inputs_3d_p = rearrange(inputs_3d_p, 'f c b -> b f c')
 
-        # 最后一个 clip → 尾部对齐
+        # Align the last clip with the end of the sequence
         eval_input_2d[-1] = inputs_2d_p[-receptive_field:]
         eval_input_3d[-1] = inputs_3d_p[-receptive_field:]
 
@@ -147,7 +147,7 @@ def pose_post_process(pose_pred, data_list, keys, receptive_field):
         data_list[keys][:, ii * receptive_field:(ii + 1) * receptive_field] = pose_pred[ii]
     data_list[keys][:, -receptive_field:] = pose_pred[-1]
     return data_list
-# ---------- DDHPOSE 输出与返回 ----------
+# ---------- DDHPOSE outputs & returns ----------
 def report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, \
                               cam, p1_dict, p2_dict, proj_func=None, cam_data=None, return_inference = False):
     dataset_name = cfg['DATASET']['train_dataset']
@@ -196,7 +196,7 @@ def report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, 
         cam_data=cam_data,
     )
     return mean_pose, h_min_pose, joint_min_pose, reproj_min_pose
-# ---------- MIXSTE 输出与返回 ----------
+# ---------- MIXSTE outputs & returns ----------
 def report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict):
     error = mpjpe(predicted_3d_pos_single, inputs_3d_single)
     
@@ -267,7 +267,7 @@ def evaluate(cfg,
         # buffer: seq_name -> lists of chunk-wise predictions
         seq_buffers = {}
 
-    # For 3DHP PCK/AUC（现在对 JPMA / Normal 都会算，只在 test_name == '3DHP' 时有效）
+    # For 3DHP PCK/AUC (now computed for JPMA/Normal but only effective when test_name == '3DHP')
     sum_pck, sum_auc = 0.0, 0.0
     total_poses = 0
 

@@ -4,9 +4,9 @@ from pkgutil import iter_modules
 from pathlib import Path
 from importlib import import_module
 
-# 当前目录
+# Current directory
 package_dir = Path(__file__).resolve().parent
-# 遍历模块
+# Iterate through modules
 for _, module_name, _ in iter_modules([str(package_dir)]):
     module = import_module(f"{__name__}.{module_name}")
     for attribute_name in dir(module):

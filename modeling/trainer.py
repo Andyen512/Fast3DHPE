@@ -16,19 +16,19 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 def save_checkpoint(model, optimizer, scheduler, cfg, out_dir,
                     epoch, metric=None, is_best=False, tag=None, logger=None):
     """
-    通用 checkpoint 保存函数（rank0-only）
+    Generic checkpoint saving function (rank0-only)
 
     Args:
-        model: nn.Module 或 DDP 包裹的模型
+        model: nn.Module or a DDP-wrapped model
         optimizer: torch.optim.Optimizer
         scheduler: torch.optim.lr_scheduler._LRScheduler or None
-        cfg: 当前 config dict（保存以便复现）
-        out_dir: str, 保存根目录
-        epoch: int, 当前 epoch
-        metric: float or None, 可选验证指标（比如 val_loss）
-        is_best: bool, 是否保存为 best.pth
-        tag: str or None, 文件名附加标签（如 'epoch_10'）
-        logger: logger 对象，可选
+        cfg: current config dict (kept for reproducibility)
+        out_dir: str, output root directory
+        epoch: int, current epoch
+        metric: float or None, optional validation metric (e.g., val_loss)
+        is_best: bool, whether to save as best.pth
+        tag: str or None, optional filename suffix (e.g., 'epoch_10')
+        logger: optional logger instance
     """
     if not is_main_process():
         return
@@ -37,7 +37,7 @@ def save_checkpoint(model, optimizer, scheduler, cfg, out_dir,
     ckpt_dir = os.path.join(out_dir, "checkpoints")
     os.makedirs(ckpt_dir, exist_ok=True)
 
-    # 取出模型（去掉 DDP wrapper）
+    # Strip the DDP wrapper from the model
     model_to_save = model.module if hasattr(model, "module") else model
     lr = optimizer.param_groups[0]["lr"]
 
@@ -147,7 +147,7 @@ class Trainer:
                     if cameras_train is not None:
                         cameras_train = cameras_train.cuda(non_blocking=True)
 
-                inputs_3d[:, :, self.root_idx] = 0  # root 对齐
+                inputs_3d[:, :, self.root_idx] = 0  # Root alignment
 
                 # self.optimizer.zero_grad(set_to_none=True)
                 # training_feat = model(inputs_2d, inputs_3d, None, self.training, inputs_act)
@@ -193,7 +193,7 @@ class Trainer:
                 self.training = False
                 model.eval()
                 if isinstance(model, DDP):
-                    model.module.eval()   # 这里才会触发你自定义的 eval() -> build_eval_model()
+                    model.module.eval()   # This triggers the custom eval() -> build_eval_model()
                 local_sum = torch.zeros(1, device=device, dtype=torch.float32)
                 local_cnt = torch.zeros(1, device=device, dtype=torch.float32)
 
@@ -209,7 +209,7 @@ class Trainer:
                         inputs_2d_flip[..., 0] *= -1
                         inputs_2d_flip[..., bundle.joints_left + bundle.joints_right, :] = inputs_2d_flip[..., bundle.joints_right + bundle.joints_left, :]
 
-                        # 尺寸转换
+                        # Shape conversion
                         inputs_3d_p = inputs_3d
                         inputs_2d, inputs_3d      = eval_data_prepare(self.cfg['DATASET']['dataset_type'], receptive_field, inputs_2d, inputs_3d_p)
                         inputs_2d_flip, _         = eval_data_prepare(self.cfg['DATASET']['dataset_type'], receptive_field, inputs_2d_flip, inputs_3d_p)
@@ -219,10 +219,10 @@ class Trainer:
                             inputs_2d = inputs_2d.cuda(non_blocking=True)
                             inputs_2d_flip = inputs_2d_flip.cuda(non_blocking=True)
               
-                        inputs_3d[..., self.root_idx, :] = 0  # root 对齐
+                        inputs_3d[..., self.root_idx, :] = 0  # Root alignment
                         # pred_3d = model(inputs_2d, inputs_3d, inputs_2d_flip, self.training, inputs_act)
 
-                        # # ====== 损失计算（和训练时保持一致）======
+                        # # ====== Loss computation (same as training) ======
                         # training_feat = {
                         #     "mpjpe": {"pred": pred_3d, "target": inputs_3d}
                         # }
@@ -244,7 +244,7 @@ class Trainer:
                         torch.cuda.empty_cache()
                         
             
-                # ====== 分布式 all_reduce，同步到所有 GPU ======
+                # ====== Distributed all_reduce to sync across GPUs ======
                 dist.all_reduce(local_sum, op=dist.ReduceOp.SUM)
                 dist.all_reduce(local_cnt, op=dist.ReduceOp.SUM)
 
@@ -277,12 +277,12 @@ class Trainer:
                         )
 
                 if epoch != 0 and epoch % self.cfg["ENGINE"]["save_freq"] == 0:
-                    # 周期性保存
+                    # Periodic checkpoint save
                     save_checkpoint(model, self.optimizer, self.scheduler,
                                     self.cfg, self.out_dir, epoch, metric=last_valid * 1000, 
                                     tag=f"epoch_{epoch}", logger=self.logger)
 
-                # 保存 best
+                # Save best checkpoint
                 if self.cfg["EVAL"] and last_valid * 1000 < self.best_rec["metric"]:
                     self.best_rec = {"metric": last_valid * 1000, "epoch": epoch}
                     save_checkpoint(model, self.optimizer, self.scheduler,
@@ -313,7 +313,7 @@ class Trainer:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
 
         # =====================================================
-        # 特殊分支：3DHP（不按 action 分），JPMA / Normal 都只整体评测一次
+        # Special branch: 3DHP (no per-action split); JPMA/Normal run once overall
         # =====================================================
         if test_dataset_name == '3DHP':
             if len(bundle_list) == 0:
@@ -321,7 +321,7 @@ class Trainer:
                     self.logger.info("No test bundle found for 3DHP.")
                 return
 
-            bundle      = bundle_list[0]   # 约定：3DHP 只有一个整体 bundle
+            bundle      = bundle_list[0]   # Convention: 3DHP uses a single overall bundle
             test_loader = bundle.test_loader
             kps_left    = bundle.kps_left
             kps_right   = bundle.kps_right
@@ -334,9 +334,9 @@ class Trainer:
                 return
 
             if eval_type == 'JPMA':
-                # 3DHP + JPMA：
-                #  - MPJPE 的 step-wise 日志在 evaluate 里已经打印
-                #  - 四种 hypothesis 的结果也在 evaluate 里保存为 .mat
+                # 3DHP + JPMA:
+                #  - Step-wise MPJPE logs are already printed inside evaluate
+                #  - The four hypotheses are saved as .mat files inside evaluate
                 if cfg['DATASET']['Test']['P2']:
                     _ = evaluate(
                         cfg, test_loader, model_pos=model,
@@ -352,11 +352,11 @@ class Trainer:
                         action=None, logger=self.logger
                     )
 
-                # evaluate 内部已经完成日志和 .mat 保存，这里直接返回即可
+                # evaluate already handles logging and .mat saving, so return here
                 return
 
             elif eval_type == 'Normal':
-                # 3DHP + Normal：整体 1 次评测 + PCK/AUC
+                # 3DHP + Normal: single overall evaluation plus PCK/AUC
                 e1, e2, e3, ev, pck, auc = evaluate(
                     cfg, test_loader, model_pos=model,
                     kps_left=kps_left, kps_right=kps_right,
@@ -391,7 +391,7 @@ class Trainer:
                 return
 
         # =====================================================
-        # 通用分支：H36M 等其他数据集，保留“按 action 评测 + 平均”的逻辑
+        # General branch: datasets such as H36M keep per-action evaluation + averaging
         # =====================================================
         if eval_type == 'JPMA':
             errors_p1        = []
@@ -462,8 +462,8 @@ class Trainer:
                     errors_p2_select.append(e2_select)
 
             elif eval_type == 'Normal':
-                # 所有数据集在 Normal 下都按 6 个返回值解包；
-                # 对非 3DHP，evaluate 会返回 pck=auc=None
+                # All datasets under Normal unpack six return values;
+                # For non-3DHP datasets evaluate returns pck=auc=None
                 e1, e2, e3, ev = evaluate(
                     cfg, test_loader, model_pos=model,
                     kps_left=kps_left, kps_right=kps_right,
@@ -477,7 +477,7 @@ class Trainer:
                 errors_vel.append(torch.as_tensor(ev, dtype=torch.float32))
 
 
-        # ---------- JPMA 聚合（H36M 等） ----------
+        # ---------- JPMA aggregation (H36M, etc.) ----------
         if eval_type == 'JPMA':
             errors_p1  = torch.stack(errors_p1)
             errors_p1_actionwise = torch.mean(errors_p1, dim=0)
@@ -519,7 +519,7 @@ class Trainer:
                         self.logger.info("step %d Protocol #2 (MPJPE) action-wise average J_Agg:  %.4f mm",
                                 ii, errors_p2_actionwise_select[ii].item())
 
-        # ---------- Normal 聚合（H36M 等） ----------
+        # ---------- Normal aggregation (H36M, etc.) ----------
         elif eval_type == 'Normal':
             if is_main_process():
                 self.logger.info('Protocol #1   (MPJPE) action-wise average: %.1f mm',

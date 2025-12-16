@@ -67,7 +67,7 @@ class PoseChunkDataset_3DHP(Dataset):
             offset = (n_chunks * chunk_length - n_frames) // 2
             bounds = np.arange(n_chunks + 1) * chunk_length - offset  # [0..n_chunks]*L - offset
 
-            # seq_key 用 numpy array 存三元组，保持和你原版一致
+            # seq_key stores the triplet as a numpy array, same as your original code
             keys = np.tile(np.array(key).reshape(1, 3), (len(bounds) - 1, 1))
 
             flip_flags = np.zeros(len(bounds) - 1, dtype=bool)
@@ -77,7 +77,7 @@ class PoseChunkDataset_3DHP(Dataset):
                 flip_flags_aug = ~flip_flags
                 self.pairs += list(zip(keys, bounds[:-1], bounds[1:], flip_flags_aug))
 
-    # ----------------- 工具函数 -----------------
+    # ----------------- Utility functions -----------------
     def _pad_sequence(self, seq, start, end):
         low = max(start, 0)
         high = min(end, seq.shape[0])
@@ -101,22 +101,22 @@ class PoseChunkDataset_3DHP(Dataset):
     def __len__(self):
         return len(self.pairs)
 
-    # ----------------- 主逻辑 -----------------
+    # ----------------- Main logic -----------------
     def __getitem__(self, index):
         seq_i, start_3d, end_3d, flip = self.pairs[index]
-        # seq_i 是一个形状为 (3,) 的 numpy 数组
+        # seq_i is a numpy array with shape (3,)
         subject, seq, cam_index = seq_i
         seq_name = (subject, seq, cam_index)
 
         if self.dataset_type == 'seq2seq':
-            # ===== seq2seq 模式：3D 输出为 [chunk_length]，2D 可以是 tds 扩展的长序列 =====
+            # ===== seq2seq mode: 3D outputs chunk_length frames, 2D can extend via tds =====
             mid = (start_3d + end_3d) // 2
 
             if self.tds == 1:
                 start_2d = start_3d
                 end_2d = end_3d
             else:
-                # tds > 1 时，用 pad * tds 决定 2D 的感受野长度（和 H36M 版本一致）
+                # When tds > 1, use pad * tds to set the 2D receptive field (same as the H36M version)
                 pad_eff = self.pad * self.tds
                 start_2d = mid - pad_eff
                 end_2d = mid + pad_eff
@@ -129,7 +129,7 @@ class PoseChunkDataset_3DHP(Dataset):
                 chunk_2d = chunk_2d[::self.frame_stride]
 
             if flip:
-                # 注意：2D 用 kps_left / kps_right
+                # Note: 2D swapping uses kps_left / kps_right
                 chunk_2d[:, :, 0] *= -1
                 if self.kps_left is not None and self.kps_right is not None:
                     chunk_2d[:, self.kps_left + self.kps_right] = \
@@ -139,7 +139,7 @@ class PoseChunkDataset_3DHP(Dataset):
             chunk_3d = None
             if self.poses_3d is not None:
                 seq_3d = np.asarray(self.poses_3d[seq_name])
-                # 和你原始 3DHP 代码保持一致：毫米 -> 米
+                # Keep consistent with your original 3DHP code: millimeters to meters
                 seq_3d = seq_3d / 1000.0
 
                 chunk_3d = self._pad_sequence(seq_3d, start_3d, end_3d)
@@ -161,11 +161,11 @@ class PoseChunkDataset_3DHP(Dataset):
             else:
                 cam = np.zeros_like(chunk_3d) if chunk_3d is not None else None
 
-            # 3DHP 原版只返回 (cam, 3D, 2D)
+            # Original 3DHP only returns (cam, 3D, 2D)
             return cam, chunk_3d, chunk_2d, 0
 
         else:
-            # ===== seq2frame 模式：H36M 风格，2D 有 pad/causal_shift，3D 对应输出帧 =====
+            # ===== seq2frame mode: H36M style with 2D padding/causal_shift and 3D aligned to the output frame =====
             # -------------------- 2D INPUT --------------------
             seq_2d = np.asarray(self.poses_2d[seq_name])
 
@@ -196,7 +196,7 @@ class PoseChunkDataset_3DHP(Dataset):
             chunk_3d = None
             if self.poses_3d is not None:
                 seq_3d = np.asarray(self.poses_3d[seq_name])
-                seq_3d = seq_3d / 1000.0  # 保持和你原 3DHP 一致
+                seq_3d = seq_3d / 1000.0  # Keep consistent with your original 3DHP implementation
 
                 low_3d = max(start_3d, 0)
                 high_3d = min(end_3d, seq_3d.shape[0])
@@ -290,7 +290,7 @@ class PoseUnchunkedDataset_3DHP(Dataset):
         # if self.cameras is not None:
         #     cam = np.expand_dims(self.cameras[seq_name], axis=0)
         # else:
-        #     cam = np.zeros_like(chunk_3d)  # 占位，保持一致
+        #     cam = np.zeros_like(chunk_3d)  # Placeholder to keep shapes aligned
         cam = np.expand_dims(cam, axis=0)
 
         if self.augment:

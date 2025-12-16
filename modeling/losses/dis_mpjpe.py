@@ -31,13 +31,13 @@ def getbonedirect(seq, boneindex):
 
 class Dis_MPJPELoss(nn.Module):
     """
-    输入:
+    Inputs:
       pred: [B, T, J, 3]
       gt:   [B, T, J, 3]
-      unit: "m" or "mm"（仅统计用；真实单位由数据决定）
-    返回:
-      loss: 标量张量
-      info: dict（供日志）
+      unit: "m" or "mm" (for logging only; actual units depend on data)
+    Returns:
+      loss: scalar tensor
+      info: dict for logging
     """
     def __init__(self, unit: str = "mm"):
         super().__init__()
@@ -66,4 +66,3 @@ class Dis_MPJPELoss(nn.Module):
 
         # return loss_total, {"loss_total": loss_total ,
         #                "loss_3d_pos": loss_3d_pos}
-

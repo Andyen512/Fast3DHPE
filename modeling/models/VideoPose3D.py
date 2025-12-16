@@ -205,7 +205,7 @@ class VideoPose3D(nn.Module):
                  joints_left=None, joints_right=None, rootidx=0, dataset_skeleton=None):
         super().__init__()
 
-        # 统一使用一个 TemporalModel，train / eval 共用
+        # Use a single TemporalModel shared by train/eval
         self.model = TemporalModel(
             num_joints_in=num_joints,
             in_features=in_chans,
@@ -222,10 +222,10 @@ class VideoPose3D(nn.Module):
         self.rootidx = rootidx
 
     def forward(self, inputs_2d, inputs_3d, input_2d_flip=None, istrain=False, inputs_act=None):
-        # 统一用一个 core 模型
+        # Reuse the same core model
         predicted_3d_pos = self.model(inputs_2d)
 
-        # ---- TTA flip（可选）----
+        # ---- Optional TTA flip ----
         if input_2d_flip is not None:
             predicted_3d_pos_flip = self.model(input_2d_flip)
             predicted_3d_pos_flip[..., 0] *= -1

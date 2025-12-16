@@ -20,11 +20,11 @@ def get_valid_args(Cls, cfg: dict, drop_keys=None):
     return { k: cfg[k] for k in cfg if k in keys }
 
 def get_ddp_module(m):
-    # 在聚合器里直接返回原模块；如果你想把损失也 DDP 包起来，改这里
+    # Return the raw module; wrap losses with DDP here if needed
     return m
 
 class Odict(dict):
-    """有序字典占位（这边直接用 dict 即可，保留名字兼容）"""
+    """Placeholder for an ordered dict; regular dict keeps compatibility."""
     pass
 
 
@@ -48,31 +48,31 @@ class LossAggregator(nn.Module):
 
     def forward(self, training_feats: dict):
         """
-        training_feats: 模型输出的 dict；键要与 loss_cfg 的 log_prefix 对齐
-          例：
+        training_feats: model output dict; keys must match loss_cfg log_prefix
+          Example:
             {
               "mpjpe": { "pred": ..., "gt": ... },
               "bone":  { "pred": ..., "gt": ..., "bone_index": ... },
             }
         """
-        loss_sum = training_feats[":_sum_"].mean()*0 if (":_sum_" in training_feats) else 0.0  # 哑元，兼容标量设备
+        loss_sum = training_feats[":_sum_"].mean()*0 if (":_sum_" in training_feats) else 0.0  # Dummy tensor to keep device alignment
         loss_info = Odict()
 
         for k, v in training_feats.items():
             if k in self.losses:
-                # v 必须是 dict，按 **kwargs 传给 loss.forward
+                # v must be a dict; pass as **kwargs to loss.forward
                 if not is_dict(v):
                     raise ValueError(f"training_feats['{k}'] must be a dict of arguments for its loss.")
                 loss_func = self.losses[k]
-                loss, info = loss_func(**v)        # 每个 loss 返回 (scalar_loss, info_dict)
-                # 标量与标量项
+                loss, info = loss_func(**v)        # Each loss returns (scalar_loss, info_dict)
+                # Scalar term
                 loss = loss.mean() * loss_func.loss_term_weight
                 for name, value in (info or {}).items():
                     # loss_info[f"scalar/{k}/{name}"] = value
                     loss_info[f"{name}"] = value
                 loss_sum = loss_sum + loss
             else:
-                # 兼容“直接喂 into sum 的张量”
+                # Allow feeding tensors directly into the sum
                 if is_tensor(v):
                     _ = v.mean()
                     loss_info[f"scalar/{k}"] = _

@@ -1,9 +1,9 @@
-# ========= 数据集部分 =========
+# ========= Dataset =========
 DATASET:
-  train_dataset: "3DHP"                   # 数据集名称，会影响加载路径
-  root: "data"                   # 存放 data_3d_h36m.npz / data_2d_h36m_xxx.npz 的目录
-  downsample: 1                  # 全局下采样因子
-  subset: 1.0                    # 子集比例（可用 <1.0 做小样本实验）
+  train_dataset: "3DHP"                   # Dataset name, affects load path
+  root: "data"                   # Directory containing data_3d_h36m.npz / data_2d_h36m_xxx.npz
+  downsample: 1                  # Global downsampling factor
+  subset: 1.0                    # Subset ratio (use <1.0 for small-sample experiments)
   receptive_field: 27
   chunk_size: 1
   batch_size: 512
@@ -20,13 +20,13 @@ DATASET:
     P2: True 
     Eval_type: 'Normal' 
 
-# ========= 模型部分 =========
+# ========= Model =========
 MODEL:
   name: "PoseFormer"
   backbone:
-    num_frame: 27   # 对齐数据长度
+    num_frame: 27   # Align data length
     num_joints: 17
-    in_chans: 2                     # 输入通道（2D坐标 → x,y）
+    in_chans: 2                     # Input channels (2D coordinates x,y)
     embed_dim_ratio: 32
     depth: 4
     num_heads: 8
@@ -36,7 +36,7 @@ MODEL:
     boneindextemp: '1,0,15,1,1,2,2,3,3,4,1,5,5,6,6,7,14,8,8,9,9,10,14,11,11,12,12,13,14,15,1,16'
 
 
-# ========= 损失 =========
+# ========= Loss =========
 LOSS:
   - type: "MPJPELoss"
     log_prefix: "mpjpe"
@@ -48,7 +48,7 @@ LOSS:
 
 
 
-# ========= 优化器 & 学习率 =========
+# ========= Optimizer & Learning Rate =========
 OPTIM:
   name: "AdamW"
   lr: 0.00040
@@ -60,16 +60,16 @@ SCHED:
   warmup_epochs: 5
   max_epochs: 400
 
-# ========= 训练引擎 =========
+# ========= Training Engine =========
 ENGINE:
-  save_name: "3dhp_PoseFormer_lr001_lrd980_dismpjpe_torch23"    # 保存路径的一部分
-  amp: true                    # 自动混合精度
+  save_name: "3dhp_PoseFormer_lr001_lrd980_dismpjpe_torch23"    # Part of the save path
+  amp: true                    # Automatic mixed precision
   find_unused_parameters: False
   log_interval: 50
   val_interval: 1
   save_freq: 200
 
-# ========= 运行时设置 =========
+# ========= Runtime Settings =========
 RUNTIME:
   seed: 1
 

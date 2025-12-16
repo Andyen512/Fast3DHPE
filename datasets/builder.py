@@ -4,7 +4,7 @@ from typing import Optional, List, Tuple, Dict, Any
 import os, numpy as np, torch
 from torch.utils.data import Dataset, DataLoader, DistributedSampler
 
-# ===== 你项目里的真实路径：按需修改 =====
+# ===== Real project paths: adjust as needed =====
 from .camera import world_to_camera, normalize_screen_coordinates
 from .h36m_dataset import Human36mDataset   
 from .threedhp_dataset import *
@@ -21,17 +21,17 @@ class Bundle:
     train_loader: Optional[DataLoader] = None
     val_loader:   Optional[DataLoader] = None
     test_loader:  Optional[DataLoader] = None
-    dataset:      Optional[object]     = None   # 原始 dataset 对象（可选）
+    dataset:      Optional[object]     = None   # Original dataset object (optional)
     keypoints_2d: Optional[dict]       = None
     kps_left:     Optional[List[int]]  = None
     kps_right:    Optional[List[int]]  = None
     joints_left:  Optional[List[int]]  = None
     joints_right: Optional[List[int]]  = None
-    action_key:  Optional[str]        = ""     # 测试时该 Bundle 对应的动作
-    action_filter: Optional[List[str]] = None  # 测试时该 Bundle 对应的动作过滤列表
-    bone_index:   Optional[List[Tuple[int,int]]] = None  # 可按需填充
+    action_key:  Optional[str]        = ""     # Action represented by this bundle during evaluation
+    action_filter: Optional[List[str]] = None  # Action filter list for this bundle during evaluation
+    bone_index:   Optional[List[Tuple[int,int]]] = None  # Populate as needed
 
-# ---------------- 基础加载（来自你旧 main） ----------------
+# ---------------- Base loading (from your previous main) ----------------
 def _load_dataset(cfg) -> object:
     name = cfg["DATASET"]["train_dataset"].lower()
     root = cfg["DATASET"].get("root", "data")
@@ -39,7 +39,7 @@ def _load_dataset(cfg) -> object:
     if name == "h36m" or name == "human3.6m":
         path_3d = os.path.join(root, f"data_3d_{name}.npz")
         dataset = Human36mDataset(path_3d, cfg["DATASET"])
-        # 准备 3D：world->camera 并根对齐
+        # Prepare 3D: world->camera and root alignment
         for subject in dataset.subjects():
             for action in dataset[subject].keys():
                 anim = dataset[subject][action]
@@ -182,7 +182,7 @@ def get_all_actions_by_subject(cfg, dataset, subjects_test):
     
     return all_actions, action_filter
 
-# ---------------- 数据展开与窗口化 ----------------
+# ---------------- Data expansion and windowing ----------------
 def fetch(dataset, keypoints_2d, subjects, action_filter=None, subset=1.0, parse_3d_poses=True, downsample=1):
     out_poses_3d, out_poses_2d, out_camera_params, out_action = [], [], [], []
 
@@ -295,7 +295,7 @@ def build_data_bundle_test_H36M(cfg, kps_left, kps_right, joints_left, joints_ri
                 joints_left=joints_left, joints_right=joints_right,
                 action_key=action_key,
                 action_filter=action_filter,
-                bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # 可在 cfg 里定义
+                bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # Optional; define in cfg if needed
             )
         )
     return test_bundle_list
@@ -331,7 +331,7 @@ def build_data_bundle_test_3DHP(cfg, kps_left, kps_right, joints_left, joints_ri
                 joints_left=joints_left, joints_right=joints_right,
                 action_key=action_key,
                 action_filter=action_filter,
-                bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # 可在 cfg 里定义
+                bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # Optional; define in cfg if needed
             )
         )
     return test_bundle_list
@@ -339,10 +339,10 @@ def build_data_bundle_test_3DHP(cfg, kps_left, kps_right, joints_left, joints_ri
 def build_data_bundle(cfg, training: bool = True) -> Bundle:
     train_dataset = cfg["DATASET"]["train_dataset"]
     test_dataset = cfg["DATASET"]["test_dataset"]
-    # 拉平成序列列表
+    # Flatten into a sequence list
     ds_cfg = cfg["DATASET"]
     subset       = float(ds_cfg.get("subset", 1.0))
-    downsample   = int(ds_cfg.get("downsample", 1))   # 全局下采样
+    downsample   = int(ds_cfg.get("downsample", 1))   # Global downsampling
 
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
 
@@ -357,20 +357,20 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
         ChunkDataset = eval(chunk_cls_name)
         UnchunkDataset = eval(unchunk_cls_name)
     except NameError as e:
-        raise ValueError(f"找不到对应的数据集类: {e}")
+        raise ValueError(f"Cannot find the dataset class: {e}")
     
-    # 读取 + 预处理
+    # Load + preprocess
     if training:
         dataset = _load_dataset(cfg)
         if train_dataset == "H36M":
             keypoints_2d, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
 
-            # 对齐长度 & 归一化
+            # Align lengths & normalize
             if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):
                 _align_kp_and_mocap_lengths(dataset, keypoints_2d)
             _normalize_keypoints(dataset, keypoints_2d)
 
-            # 划分 subject
+            # Split subjects
             subjects_train, subjects_semi, subjects_test = _build_splits(cfg)  
 
             cameras_train, poses_train, poses_train_2d, action_train = fetch(dataset, keypoints_2d, subjects_train, subset=subset, downsample=downsample)
@@ -397,7 +397,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
         sampler = DistributedSampler(train_dataset, num_replicas=torch.distributed.get_world_size(), rank=dist.get_rank(), shuffle=True)
         train_loader = DataLoader(train_dataset, batch_size=batch_size//stride, sampler=sampler, num_workers=4, pin_memory=True)
     
-        # 验证集简单用测试 subject 的较稀疏滑窗
+        # Validation uses a sparse sliding window from test subjects
         val_dataset = UnchunkDataset(poses_valid_2d, poses_valid, cameras_valid, action_valid,
                 pad=(receptive_field -1) // 2, 
                 causal_shift=causal_shift,
@@ -408,12 +408,12 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
         val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=dist.get_rank(), shuffle=False)
         val_loader = DataLoader(
             val_dataset,
-            batch_size=1,      # 可以比训练大，比如 4/8/16，看显存
-            sampler=val_sampler,         # 关键：恢复分片
+            batch_size=1,      # Can exceed training batch size, e.g., 4/8/16 depending on memory
+            sampler=val_sampler,         # Critical: preserve shard allocation
             shuffle=False,
-            num_workers=2,                # eval 往往 GPU-bound，过大反而有IPC开销
+            num_workers=2,                # Evaluation is often GPU-bound; too many workers add IPC overhead
             pin_memory=True,
-            persistent_workers=True,       # PyTorch>=1.8，避免每轮重启
+            persistent_workers=True,       # PyTorch>=1.8 to avoid respawning workers each epoch
             collate_fn=collate_keep_seqname
         )
         return Bundle(
@@ -423,7 +423,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
             # keypoints_2d=keypoints_2d,
             kps_left=kps_left, kps_right=kps_right,
             joints_left=joints_left, joints_right=joints_right,
-            bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # 可在 cfg 里定义
+            bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # Optional; define in cfg if needed
         )
     else:
         if train_dataset == test_dataset:
@@ -432,12 +432,12 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
             if test_dataset == "H36M":
                 keypoints_2d, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
 
-                # 对齐长度 & 归一化
+                # Align lengths & normalize
                 if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):
                     _align_kp_and_mocap_lengths(dataset, keypoints_2d)
                 _normalize_keypoints(dataset, keypoints_2d)
 
-                # 划分 subject
+                # Split subjects
                 subjects_train, subjects_semi, subjects_test = _build_splits(cfg)  
                 
                 all_actions, action_filter = get_all_actions_by_subject(cfg, dataset, subjects_test)
@@ -478,7 +478,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
                     joints_left=joints_left, joints_right=joints_right,
                     # action_key=action_key,
                     # action_filter=action_filter,
-                    bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # 可在 cfg 里定义
+                    bone_index=cfg.get("DATASET", {}).get("bone_index", None)  # Optional; define in cfg if needed
                 )
             )
             return test_bundle_list
