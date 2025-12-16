@@ -18,7 +18,7 @@ DATASET:
   test_dataset: H36M
   dataset_type: 'seq2seq'
   frame_stride: 3
-  tds: 2
+  tds: 3
 
   Test:
     actions: '*'   

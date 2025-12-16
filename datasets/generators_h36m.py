@@ -76,7 +76,7 @@ class PoseChunkDataset_H36M(Dataset):
                 end_2d   = end_3d
             else:
                 pad_eff = self.pad * self.tds
-                start_2d = mid - pad_eff
+                start_2d = mid - pad_eff - 1 
                 end_2d   = mid + pad_eff
 
             # ----------- 2D pose -------------
@@ -94,9 +94,14 @@ class PoseChunkDataset_H36M(Dataset):
             chunk_3d = None
             if self.poses_3d is not None:
                 seq_3d = np.asarray(self.poses_3d[seq_i])
-                chunk_3d = self._pad_sequence(seq_3d, start_3d, end_3d)
+                
                 if self.frame_stride > 1:
+                    start_3d = mid - pad_eff - 1 
+                    end_3d = mid + pad_eff
+                    chunk_3d = self._pad_sequence(seq_3d, start_3d, end_3d)
                     chunk_3d = chunk_3d[::self.frame_stride]
+                else:
+                    chunk_3d = self._pad_sequence(seq_3d, start_3d, end_3d)
                     
                 if flip:
                     chunk_3d[:, :, 0] *= -1
@@ -110,7 +115,7 @@ class PoseChunkDataset_H36M(Dataset):
                     cam[2] *= -1
                     cam[7] *= -1
             else:
-                cam = np.zeros_like(chunk_3d)  # Placeholder to keep shapes aligned
+                cam = np.zeros_like(chunk_3d)  # 占位，保持一致
 
             action = self.action[seq_i]  # Ensure ndarray
             return cam, chunk_3d, chunk_2d, action
@@ -209,7 +214,7 @@ class PoseUnchunkedDataset_H36M(Dataset):
         if self.cameras is not None:
             cam = np.expand_dims(self.cameras[idx], axis=0)
         else:
-            cam = np.zeros_like(chunk_3d)  # Placeholder to keep shapes aligned
+            cam = np.zeros_like(chunk_3d)  # 占位，保持一致
             cam = np.expand_dims(cam, axis=0)
 
         if self.augment:
@@ -260,9 +265,9 @@ class PoseUnchunkedDataset_H36M(Dataset):
 #         seq_3d = None if self.poses_3d is None else self.poses_3d[idx]   # (T, J, 3) or None
 #         cam    = None if self.cameras  is None else self.cameras[idx]    # (C,)
 
-#         # ===================== seq2seq mode =====================
+#         # ===================== seq2seq 模式 =====================
 #         if self.dataset_type == 'seq2seq':
-#             # No padding for 2D/3D; use the entire sequence
+#             # 2D / 3D 都不 pad，直接整段
 #             chunk_2d = np.expand_dims(seq_2d, axis=0)  # (1, T, J, 2)
 #             chunk_3d = None
 #             if seq_3d is not None:
@@ -271,9 +276,9 @@ class PoseUnchunkedDataset_H36M(Dataset):
 #             if cam is not None:
 #                 cam = np.expand_dims(cam, axis=0)          # (1, C)
 
-#         # ===================== seq2frame mode =====================
+#         # ===================== seq2frame 模式 =====================
 #         else:
-#             # Same as UnchunkedGenerator: pad both 2D ends and keep 3D length
+#             # 和 UnchunkedGenerator 一样：2D 两端 pad，3D 原长度
 #             # 2D: pad in time dimension
 #             start_pad = self.pad + self.causal_shift
 #             end_pad   = self.pad - self.causal_shift
