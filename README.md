@@ -8,6 +8,9 @@ This repository is supported by [BNU-IVC](https://github.com/BNU-IVC) and [WATRI
 
 ## 🆕 What's New
 
+-- **[Dec 2025]** 🚀🚀🚀 Our paper **FastDDHPose: Towards Unified, Efficient, and Disentangled 3D Human Pose Estimation** is released, and the corresponding code for our model (**FastDDHPose**) and the unified framework (**Fast3DHPE**) is being progressively made available.  
+  👉 Paper: [arXiv](https://arxiv.org/abs/2512.14162)
+
 -- **[Feb 2024]** 🔥🔥🔥 Our paper **Disentangled Diffusion-Based 3D Human Pose Estimation with Hierarchical Spatial and Temporal Denoiser** has been accepted by **AAAI 2024**!  
   👉 Paper: [AAAI](https://ojs.aaai.org/index.php/AAAI/article/view/27847) ｜ [arXiv](https://arxiv.org/abs/2403.04444) ｜ Code: [GitHub](https://github.com/Andyen512/DDHPose)
 <!-- (https://ojs.aaai.org/index.php/AAAI/article/view/27847).   -->
