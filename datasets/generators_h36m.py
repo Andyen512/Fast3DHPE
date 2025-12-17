@@ -115,7 +115,7 @@ class PoseChunkDataset_H36M(Dataset):
                     cam[2] *= -1
                     cam[7] *= -1
             else:
-                cam = np.zeros_like(chunk_3d)  # 占位，保持一致
+                cam = np.zeros_like(chunk_3d) 
 
             action = self.action[seq_i]  # Ensure ndarray
             return cam, chunk_3d, chunk_2d, action
@@ -171,10 +171,7 @@ class PoseChunkDataset_H36M(Dataset):
                     cam[7] *= -1
 
             return cam, chunk_3d, chunk_2d, self.action[seq_i]
-     
-
-
-
+    
 
 class PoseUnchunkedDataset_H36M(Dataset):
     def __init__(self, poses_2d, poses_3d=None, cameras=None, action=None,
@@ -214,7 +211,7 @@ class PoseUnchunkedDataset_H36M(Dataset):
         if self.cameras is not None:
             cam = np.expand_dims(self.cameras[idx], axis=0)
         else:
-            cam = np.zeros_like(chunk_3d)  # 占位，保持一致
+            cam = np.zeros_like(chunk_3d) 
             cam = np.expand_dims(cam, axis=0)
 
         if self.augment:
@@ -232,91 +229,3 @@ class PoseUnchunkedDataset_H36M(Dataset):
 
         return cam, chunk_3d, chunk_2d, None, batch_act
 
-# class PoseUnchunkedDataset_H36M(Dataset):
-#     def __init__(self, poses_2d, poses_3d=None, cameras=None, action=None,
-#                  pad=0, causal_shift=0, augment=False,
-#                  kps_left=None, kps_right=None, joints_left=None, joints_right=None,
-#                  dataset_type='seq2frame'):
-
-#         assert poses_3d is None or len(poses_3d) == len(poses_2d)
-#         assert cameras is None or len(cameras) == len(poses_2d)
-
-#         self.poses_2d = poses_2d
-#         self.poses_3d = poses_3d
-#         self.cameras  = cameras
-#         self.action   = action
-
-#         self.pad          = pad
-#         self.causal_shift = causal_shift
-#         self.augment      = augment
-
-#         self.kps_left   = kps_left
-#         self.kps_right  = kps_right
-#         self.joints_left  = joints_left
-#         self.joints_right = joints_right
-
-#         self.dataset_type = dataset_type
-
-#     def __len__(self):
-#         return len(self.poses_2d)
-
-#     def __getitem__(self, idx):
-#         seq_2d = self.poses_2d[idx]      # (T, J, 2)
-#         seq_3d = None if self.poses_3d is None else self.poses_3d[idx]   # (T, J, 3) or None
-#         cam    = None if self.cameras  is None else self.cameras[idx]    # (C,)
-
-#         # ===================== seq2seq 模式 =====================
-#         if self.dataset_type == 'seq2seq':
-#             # 2D / 3D 都不 pad，直接整段
-#             chunk_2d = np.expand_dims(seq_2d, axis=0)  # (1, T, J, 2)
-#             chunk_3d = None
-#             if seq_3d is not None:
-#                 chunk_3d = np.expand_dims(seq_3d, axis=0)  # (1, T, J, 3)
-
-#             if cam is not None:
-#                 cam = np.expand_dims(cam, axis=0)          # (1, C)
-
-#         # ===================== seq2frame 模式 =====================
-#         else:
-#             # 和 UnchunkedGenerator 一样：2D 两端 pad，3D 原长度
-#             # 2D: pad in time dimension
-#             start_pad = self.pad + self.causal_shift
-#             end_pad   = self.pad - self.causal_shift
-#             padded_2d = np.pad(
-#                 seq_2d,
-#                 ((start_pad, end_pad), (0, 0), (0, 0)),
-#                 mode='edge'
-#             )  # (T + 2*pad, J, 2)
-#             chunk_2d = np.expand_dims(padded_2d, axis=0)    # (1, T+2*pad, J, 2)
-
-#             # 3D: no temporal padding
-#             chunk_3d = None
-#             if seq_3d is not None:
-#                 chunk_3d = np.expand_dims(seq_3d, axis=0)   # (1, T, J, 3)
-
-#             if cam is not None:
-#                 cam = np.expand_dims(cam, axis=0)           # (1, C)
-
-#         # ===================== Flip Augmentation =====================
-#         if self.augment:
-#             # cameras
-#             if cam is not None:
-#                 cam = np.concatenate((cam, cam), axis=0)    # (2, C)
-#                 cam[1, 2] *= -1
-#                 cam[1, 7] *= -1
-
-#             # 3D
-#             if chunk_3d is not None:
-#                 chunk_3d = np.concatenate((chunk_3d, chunk_3d), axis=0)  # (2, T, J, 3)
-#                 chunk_3d[1, :, :, 0] *= -1
-#                 chunk_3d[1, :, self.joints_left + self.joints_right] = \
-#                     chunk_3d[1, :, self.joints_right + self.joints_left]
-
-#             # 2D
-#             chunk_2d = np.concatenate((chunk_2d, chunk_2d), axis=0)      # (2, T or T+2*pad, J, 2)
-#             chunk_2d[1, :, :, 0] *= -1
-#             chunk_2d[1, :, self.kps_left + self.kps_right] = \
-#                 chunk_2d[1, :, self.kps_right + self.kps_left]
-
-#         act = None if self.action is None else self.action[idx]
-#         return cam, chunk_3d, chunk_2d, None, act
