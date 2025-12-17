@@ -35,6 +35,10 @@ The following algorithms and datasets are currently supported. More methods and 
 - [x] [Human3.6M (CVPR 2014)](http://vision.imar.ro/human3.6m/)
 - [x] [MPI-INF-3DHP (3DV 2017)](http://gvv.mpi-inf.mpg.de/3dhp-dataset/)
 
+## 🚀 Getting Started
+
+Please see [0.get_started.md](docs/0.get_started.md). We also provide the following tutorials for your reference:
+
 ### 🧩 TODO
 - [ ] 🛠️ Complete training and evaluation code
 - [ ] 📦 Release pre-trained model checkpoints
