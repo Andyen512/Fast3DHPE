@@ -33,6 +33,7 @@ The following algorithms and datasets are currently supported. More methods and 
 - [x] [KTPFormer (CVPR 2024)](https://github.com/JihuaPeng/KTPFormer)
 - [x] [FinePOSE (CVPR 2024)](https://github.com/PKU-ICST-MIPL/FinePOSE_CVPR2024)
 - [x] [DDHPose (AAAI 2024)](https://github.com/Andyen512/DDHPose)
+- [x] [FastDDHPose (Arxiv 2025)](https://github.com/Andyen512/Fast3DHPE)
 
 ### Supported Datasets
 - [x] [Human3.6M (CVPR 2014)](http://vision.imar.ro/human3.6m/)
