@@ -60,6 +60,14 @@ Please see [0.get_started.md](docs/0.get_started.md). We also provide the follow
   year={2024}
 }
 ```
+```bibtex
+@article{cai2025fastddhpose,
+  title={FastDDHPose: Towards Unified, Efficient, and Disentangled 3D Human Pose Estimation},
+  author={Cai, Qingyuan and Zhang, Linxin and Hu, Xuecai and Hou, Saihui and Huang, Yongzhen},
+  journal={arXiv preprint arXiv:2512.14162},
+  year={2025}
+}
+```
 
 ## Acknowledgement
 Our code refers to the following repositories.
