@@ -10,7 +10,7 @@ DATASET:
   subset: 1.0                    # Subset ratio (use <1.0 for small-sample experiments)
   receptive_field: 27
   chunk_size: 1
-  batch_size: 128
+  batch_size: 1024
   stride: 1
   Root_idx: 0
   Cross_Dataset: False
@@ -62,7 +62,7 @@ SCHED:
 
 # ========= Training Engine =========
 ENGINE:
-  save_name: "h36m_PoseFormerV2_lr000040_lrd990_f3_torch23"    
+  save_name: "h36m_PoseFormerV2_lr000040_lrd990_f3_torch23_bs1024"    
   amp: false                    # Automatic mixed precision
   find_unused_parameters: False
   log_interval: 50

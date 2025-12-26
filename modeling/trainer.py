@@ -134,7 +134,7 @@ class Trainer:
             N = 0
             iteration = 0
             quickdebug = self.cfg.get("DEBUG", False)
-            for cameras_train, batch_3d, batch_2d, batch_act in train_loader:
+            for cameras_train, batch_3d, batch_2d, seq_name, batch_act in train_loader:
                 if cameras_train is not None:
                     cameras_train = cameras_train.float()
                 inputs_3d = batch_3d.float()
@@ -162,7 +162,7 @@ class Trainer:
                 with autocast(enabled=self.use_amp):
                     training_feat = model(inputs_2d, inputs_3d, None, self.training, inputs_act)
                     loss_total, loss_info = self.loss_agg(training_feat)
-
+ 
                 # ----- backward & step with / without AMP -----
                 if self.use_amp:
                     self.scaler.scale(loss_total).backward()
@@ -193,7 +193,7 @@ class Trainer:
                 self.training = False
                 model.eval()
                 if isinstance(model, DDP):
-                    model.module.eval()   # This triggers the custom eval() -> build_eval_model()
+                    model.module.eval()   # Triggers custom eval() -> build_eval_model()
                 local_sum = torch.zeros(1, device=device, dtype=torch.float32)
                 local_cnt = torch.zeros(1, device=device, dtype=torch.float32)
 
@@ -244,7 +244,7 @@ class Trainer:
                         torch.cuda.empty_cache()
                         
             
-                # ====== Distributed all_reduce to sync across GPUs ======
+                # ====== Distributed all_reduce to sync every GPU ======
                 dist.all_reduce(local_sum, op=dist.ReduceOp.SUM)
                 dist.all_reduce(local_cnt, op=dist.ReduceOp.SUM)
 
@@ -313,7 +313,7 @@ class Trainer:
                 self.optimizer.load_state_dict(checkpoint['optimizer'])
 
         # =====================================================
-        # Special branch: 3DHP (no per-action split); JPMA/Normal run once overall
+        # Special branch: 3DHP (single overall eval for JPMA/Normal)
         # =====================================================
         if test_dataset_name == '3DHP':
             if len(bundle_list) == 0:
@@ -321,7 +321,7 @@ class Trainer:
                     self.logger.info("No test bundle found for 3DHP.")
                 return
 
-            bundle      = bundle_list[0]   # Convention: 3DHP uses a single overall bundle
+            bundle      = bundle_list[0]   # Convention: 3DHP has one overall bundle
             test_loader = bundle.test_loader
             kps_left    = bundle.kps_left
             kps_right   = bundle.kps_right
@@ -335,8 +335,8 @@ class Trainer:
 
             if eval_type == 'JPMA':
                 # 3DHP + JPMA:
-                #  - Step-wise MPJPE logs are already printed inside evaluate
-                #  - The four hypotheses are saved as .mat files inside evaluate
+                #  - Step-wise MPJPE logs already printed in evaluate
+                #  - evaluate also saves all four hypotheses as .mat
                 if cfg['DATASET']['Test']['P2']:
                     _ = evaluate(
                         cfg, test_loader, model_pos=model,
@@ -352,11 +352,11 @@ class Trainer:
                         action=None, logger=self.logger
                     )
 
-                # evaluate already handles logging and .mat saving, so return here
+                # evaluate already logged and saved .mat; return directly
                 return
 
             elif eval_type == 'Normal':
-                # 3DHP + Normal: single overall evaluation plus PCK/AUC
+                # 3DHP + Normal: single evaluation plus PCK/AUC
                 e1, e2, e3, ev, pck, auc = evaluate(
                     cfg, test_loader, model_pos=model,
                     kps_left=kps_left, kps_right=kps_right,
@@ -391,7 +391,7 @@ class Trainer:
                 return
 
         # =====================================================
-        # General branch: datasets such as H36M keep per-action evaluation + averaging
+        # General branch: datasets like H36M keep per-action evaluation + averaging
         # =====================================================
         if eval_type == 'JPMA':
             errors_p1        = []
@@ -477,7 +477,7 @@ class Trainer:
                 errors_vel.append(torch.as_tensor(ev, dtype=torch.float32))
 
 
-        # ---------- JPMA aggregation (H36M, etc.) ----------
+        # ---------- JPMA aggregation (H36M etc.) ----------
         if eval_type == 'JPMA':
             errors_p1  = torch.stack(errors_p1)
             errors_p1_actionwise = torch.mean(errors_p1, dim=0)
@@ -519,7 +519,7 @@ class Trainer:
                         self.logger.info("step %d Protocol #2 (MPJPE) action-wise average J_Agg:  %.4f mm",
                                 ii, errors_p2_actionwise_select[ii].item())
 
-        # ---------- Normal aggregation (H36M, etc.) ----------
+        # ---------- Normal aggregation (H36M etc.) ----------
         elif eval_type == 'Normal':
             if is_main_process():
                 self.logger.info('Protocol #1   (MPJPE) action-wise average: %.1f mm',

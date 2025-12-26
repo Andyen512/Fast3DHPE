@@ -41,7 +41,7 @@ The following algorithms and datasets are currently supported. More methods and 
 
 ## 🚀 Getting Started
 
-Please see [0.get_started.md](docs/0.get_started.md). We also provide the following tutorials for your reference:
+Please see [0.get_started.md](docs/0.get_started.md). 
 
 ### 🧩 TODO
 - [ ] 🛠️ Complete training and evaluation code

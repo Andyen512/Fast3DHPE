@@ -31,7 +31,7 @@ class Bundle:
     action_filter: Optional[List[str]] = None  # Action filter list for this bundle during evaluation
     bone_index:   Optional[List[Tuple[int,int]]] = None  # Populate as needed
 
-# ---------------- Base loading (from your previous main) ----------------
+# ---------------- Base loading (from the previous main) ----------------
 def _load_dataset(cfg) -> object:
     name = cfg["DATASET"]["train_dataset"].lower()
     root = cfg["DATASET"].get("root", "data")
@@ -39,7 +39,7 @@ def _load_dataset(cfg) -> object:
     if name == "h36m" or name == "human3.6m":
         path_3d = os.path.join(root, f"data_3d_{name}.npz")
         dataset = Human36mDataset(path_3d, cfg["DATASET"])
-        # Prepare 3D: world->camera and root alignment
+        # Prepare 3D: convert world->camera and align root
         for subject in dataset.subjects():
             for action in dataset[subject].keys():
                 anim = dataset[subject][action]
@@ -279,13 +279,36 @@ def build_data_bundle_test_H36M(cfg, kps_left, kps_right, joints_left, joints_ri
                 continue
 
         cameras_act, poses_act, poses_2d_act, action = fetch_actions(actions[action_key], keypoints, dataset)
-        act_dataset = PoseUnchunkedDataset(poses_2d_act, poses_act, cameras_act, action,
-                                        pad=0, 
-                                        causal_shift=0, augment=False,
-                                        kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
-                                        joints_right=joints_right)
+        
+        use_chunk = cfg["DATASET"].get("Test", {}).get("test_chunked", False) 
+        DatasetCls = PoseChunkDataset_H36M if use_chunk else PoseUnchunkedDataset_H36M
 
-        test_loader = DataLoader(act_dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=collate_keep_seqname)
+        if use_chunk:
+            act_dataset = DatasetCls(
+                poses_2d_act, poses_act, cameras_act, action,
+                pad=(cfg["DATASET"]["receptive_field"] - 1) // 2,
+                causal_shift=0, augment=False,
+                kps_left=kps_left, kps_right=kps_right,
+                joints_left=joints_left, joints_right=joints_right,
+                dataset_type=cfg["DATASET"]["dataset_type"],
+                frame_stride=cfg["DATASET"]["frame_stride"],
+                tds=cfg["DATASET"]["tds"]
+            )
+        else:
+            if cfg["DATASET"]["dataset_type"] == 'seq2frame':
+                pad = (cfg["DATASET"]["receptive_field"] - 1) // 2
+            else:
+                pad = 0
+            act_dataset = DatasetCls(
+                poses_2d_act, poses_act, cameras_act, action,
+                pad=pad, causal_shift=0, augment=False,
+                kps_left=kps_left, kps_right=kps_right,
+                joints_left=joints_left, joints_right=joints_right,
+                dataset_type=cfg["DATASET"]["dataset_type"],
+            )
+
+        test_bs = int(cfg["DATASET"].get("Test", {}).get("batch_size", 1))
+        test_loader = DataLoader(act_dataset, batch_size=test_bs, shuffle=False, num_workers=0, collate_fn=collate_keep_seqname)
         test_bundle_list.append(
             Bundle(
                 test_loader=test_loader,
@@ -365,7 +388,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
         if train_dataset == "H36M":
             keypoints_2d, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
 
-            # Align lengths & normalize
+            # Align length & normalize
             if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):
                 _align_kp_and_mocap_lengths(dataset, keypoints_2d)
             _normalize_keypoints(dataset, keypoints_2d)
@@ -393,13 +416,15 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
                                 kps_left=kps_left, kps_right=kps_right,
                                 joints_left=joints_left, joints_right=joints_right,
                                 dataset_type=ds_cfg["dataset_type"],
-                                frame_stride=ds_cfg["frame_stride"])
+                                frame_stride=ds_cfg["frame_stride"],
+                                tds=ds_cfg.get("tds", 1))
         sampler = DistributedSampler(train_dataset, num_replicas=torch.distributed.get_world_size(), rank=dist.get_rank(), shuffle=True)
         train_loader = DataLoader(train_dataset, batch_size=batch_size//stride, sampler=sampler, num_workers=4, pin_memory=True)
     
-        # Validation uses a sparse sliding window from test subjects
+        # Validation uses a sparse sliding window on test subjects
+        val_pad = 0 if ds_cfg["dataset_type"] == "seq2seq" else (receptive_field - 1) // 2
         val_dataset = UnchunkDataset(poses_valid_2d, poses_valid, cameras_valid, action_valid,
-                pad=(receptive_field -1) // 2, 
+                pad=val_pad, 
                 causal_shift=causal_shift,
                 augment=False,
                 kps_left=kps_left, kps_right=kps_right,
@@ -408,12 +433,12 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
         val_sampler = DistributedSampler(val_dataset, num_replicas=world_size, rank=dist.get_rank(), shuffle=False)
         val_loader = DataLoader(
             val_dataset,
-            batch_size=1,      # Can exceed training batch size, e.g., 4/8/16 depending on memory
-            sampler=val_sampler,         # Critical: preserve shard allocation
+            batch_size=1,      # Can exceed training batch size (e.g., 4/8/16) depending on memory
+            sampler=val_sampler,         # Critical: restore shard allocation
             shuffle=False,
-            num_workers=2,                # Evaluation is often GPU-bound; too many workers add IPC overhead
+            num_workers=2,                # Eval is typically GPU-bound; too many workers add IPC overhead
             pin_memory=True,
-            persistent_workers=True,       # PyTorch>=1.8 to avoid respawning workers each epoch
+            persistent_workers=True,       # PyTorch>=1.8 to avoid respawning each epoch
             collate_fn=collate_keep_seqname
         )
         return Bundle(
@@ -432,7 +457,7 @@ def build_data_bundle(cfg, training: bool = True) -> Bundle:
             if test_dataset == "H36M":
                 keypoints_2d, kps_left, kps_right, joints_left, joints_right = _load_keypoints_2d(cfg, dataset)
 
-                # Align lengths & normalize
+                # Align length & normalize
                 if any("positions_3d" in dataset[s][a] for s in dataset.subjects() for a in dataset[s].keys()):
                     _align_kp_and_mocap_lengths(dataset, keypoints_2d)
                 _normalize_keypoints(dataset, keypoints_2d)

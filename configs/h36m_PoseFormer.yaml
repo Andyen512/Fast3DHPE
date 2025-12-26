@@ -10,7 +10,7 @@ DATASET:
   subset: 1.0                    # Subset ratio (use <1.0 for small-sample experiments)
   receptive_field: 27
   chunk_size: 1
-  batch_size: 512
+  batch_size: 3072
   stride: 1
   Root_idx: 0
   Cross_Dataset: False
@@ -55,9 +55,9 @@ LOSS:
 # ========= Optimizer & Learning Rate =========
 OPTIM:
   name: "AdamW"
-  lr: 0.00040
+  lr: 0.001
   weight_decay: 0.1
-  lr_decay: 0.99
+  lr_decay: 0.980
 
 SCHED:
   name: "Cosine"
@@ -66,7 +66,7 @@ SCHED:
 
 # ========= Training Engine =========
 ENGINE:
-  save_name: "h36m_PoseFormer_lr001_lrd980_dismpjpe_torch23"    # Part of the save path
+  save_name: "h36m_PoseFormer_lr001_lrd980_mpjpe_torch23_bs3072_new"    # Part of the save path
   amp: true                    # Automatic mixed precision
   find_unused_parameters: False
   log_interval: 50

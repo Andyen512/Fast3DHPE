@@ -10,20 +10,22 @@ DATASET:
   downsample: 1                  # Global downsampling factor
   subset: 1.0                    # Subset ratio (use <1.0 for small-sample experiments)
   receptive_field: 243
-  chunk_size: 243
-  batch_size: 768
-  stride: 243
+  chunk_size: 9
+  batch_size: 32
+  stride: 1
   Root_idx: 0
   Cross_Dataset: False
   test_dataset: H36M
   dataset_type: 'seq2seq'
-  frame_stride: 3
-  tds: 3
+  frame_stride: 2
+  tds: 2
 
   Test:
     actions: '*'   
     P2: True 
     Eval_type: 'Normal' 
+    batch_size: 10
+    test_chunked: True
 
 # ========= Model =========
 MODEL:
@@ -33,7 +35,7 @@ MODEL:
     num_block: 6
     d_time: 1
     num_joints: 17
-    embed_dim_ratio: 512
+    embed_dim_ratio: 256
 
     
     
@@ -52,9 +54,9 @@ LOSS:
 # ========= Optimizer & Learning Rate =========
 OPTIM:
   name: "AdamW"
-  lr: 0.001
+  lr: 0.0015
   weight_decay: 0.1
-  lr_decay: 0.99
+  lr_decay: 0.990
 
 SCHED:
   name: "Cosine"
@@ -63,7 +65,7 @@ SCHED:
 
 # ========= Training Engine =========
 ENGINE:
-  save_name: "h36m_STCFormer_lr001_lrd96_mpjpe_torch23"   
+  save_name: "test"   
   amp: true                    # Automatic mixed precision
   find_unused_parameters: False
   log_interval: 50
@@ -74,5 +76,5 @@ ENGINE:
 RUNTIME:
   seed: 1
 
-DEBUG: False
+DEBUG: True
 EVAL: True
