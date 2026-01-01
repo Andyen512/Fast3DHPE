@@ -10,7 +10,7 @@ DATASET:
   downsample: 1                  # Global downsampling factor
   subset: 1.0                    # Subset ratio (use <1.0 for small-sample experiments)
   receptive_field: 243
-  chunk_size: 9
+  chunk_size: 3
   batch_size: 32
   stride: 1
   Root_idx: 0
@@ -65,7 +65,7 @@ SCHED:
 
 # ========= Training Engine =========
 ENGINE:
-  save_name: "test"   
+  save_name: "h36m_STCFormer_lr0015_lrd990"   
   amp: true                    # Automatic mixed precision
   find_unused_parameters: False
   log_interval: 50
@@ -76,5 +76,5 @@ ENGINE:
 RUNTIME:
   seed: 1
 
-DEBUG: True
+DEBUG: False
 EVAL: True
