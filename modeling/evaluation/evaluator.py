@@ -14,7 +14,7 @@ def eval_data_prepare(dataset_type, receptive_field, inputs_2d, inputs_3d):
     T = inputs_2d_p.shape[0]
 
     # ============================================================
-    #   A) seq2frame mode: input RF frames, output the center frame (PoseFormer style)
+    #   A) seq2frame mode: input RF frames, output center frame (standard PoseFormer)
     # ============================================================
     if dataset_type == "seq2frame":
         out_num = T - receptive_field + 1
@@ -34,10 +34,10 @@ def eval_data_prepare(dataset_type, receptive_field, inputs_2d, inputs_3d):
 
 
     # ============================================================
-    #   B) seq2seq mode: retain the original chunked seq2seq logic
+    #   B) seq2seq mode: keep your original chunked seq2seq (unchanged)
     # ============================================================
     else:
-        # ---- Original seq2seq logic, unchanged from here ----
+        # ---- Your original seq2seq logic, completely unchanged from here ----
         if inputs_2d_p.shape[0] / receptive_field > inputs_2d_p.shape[0] // receptive_field: 
             out_num = inputs_2d_p.shape[0] // receptive_field + 1
         else:
@@ -51,7 +51,7 @@ def eval_data_prepare(dataset_type, receptive_field, inputs_2d, inputs_3d):
             eval_input_2d[i] = inputs_2d_p[i*receptive_field : i*receptive_field+receptive_field]
             eval_input_3d[i] = inputs_3d_p[i*receptive_field : i*receptive_field+receptive_field]
 
-        # Pad if the sequence is shorter than the receptive field
+        # If length is less than RF → pad
         if inputs_2d_p.shape[0] < receptive_field:
             from torch.nn import functional as F
             pad_right = receptive_field - inputs_2d_p.shape[0]
@@ -65,7 +65,7 @@ def eval_data_prepare(dataset_type, receptive_field, inputs_2d, inputs_3d):
             inputs_3d_p = F.pad(inputs_3d_p, (0,pad_right), mode='replicate')
             inputs_3d_p = rearrange(inputs_3d_p, 'f c b -> b f c')
 
-        # Align the last clip with the sequence tail
+        # Last clip → align to tail
         eval_input_2d[-1] = inputs_2d_p[-receptive_field:]
         eval_input_3d[-1] = inputs_3d_p[-receptive_field:]
 
@@ -143,7 +143,7 @@ def pose_post_process(pose_pred, data_list, keys, receptive_field):
         data_list[keys][:, ii * receptive_field:(ii + 1) * receptive_field] = pose_pred[ii]
     data_list[keys][:, -receptive_field:] = pose_pred[-1]
     return data_list
-# ---------- DDHPOSE outputs & returns ----------
+# ---------- DDHPOSE Output and Return ----------
 def report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, inputs_3d_single, inputs_2d_single, \
                               cam, p1_dict, p2_dict, proj_func=None, cam_data=None, return_inference = False):
     dataset_name = cfg['DATASET']['train_dataset']
@@ -192,7 +192,7 @@ def report_and_return_ddhpose(cfg, predicted_3d_pos_single, inputs_traj_single, 
         cam_data=cam_data,
     )
     return mean_pose, h_min_pose, joint_min_pose, reproj_min_pose
-# ---------- MIXSTE outputs & returns ----------
+# ---------- MIXSTE Output and Return ----------
 def report_and_return_mixste(cfg, predicted_3d_pos_single, inputs_3d_single, p1_dict):
     error = mpjpe(predicted_3d_pos_single, inputs_3d_single)
     
@@ -263,7 +263,7 @@ def evaluate(cfg,
         # buffer: seq_name -> lists of chunk-wise predictions
         seq_buffers = {}
 
-    # For 3DHP PCK/AUC (computed for JPMA/Normal but only valid when test_name == '3DHP')
+    # For 3DHP PCK/AUC (now computed for both JPMA / Normal, only valid when test_name == '3DHP')
     sum_pck, sum_auc = 0.0, 0.0
     total_poses = 0
 
@@ -335,17 +335,18 @@ def evaluate(cfg,
 
                 if len(inputs_2d.shape) == 3:
                     inputs_2d, inputs_2d_flip, inputs_3d = inputs_2d.unsqueeze(0), inputs_2d_flip.unsqueeze(0), inputs_3d.unsqueeze(0)
-           
-                inputs_2d, inputs_3d = eval_data_prepare(
-                    cfg['DATASET']['dataset_type'],
-                    cfg['DATASET']['receptive_field'],
-                    inputs_2d, inputs_3d_p
-                )
-                inputs_2d_flip, _ = eval_data_prepare(
-                    cfg['DATASET']['dataset_type'],
-                    cfg['DATASET']['receptive_field'],
-                    inputs_2d_flip, inputs_3d_p
-                )
+                
+                if not cfg["DATASET"]["Test"]["test_chunked"]:
+                    inputs_2d, inputs_3d = eval_data_prepare(
+                        cfg['DATASET']['dataset_type'],
+                        cfg['DATASET']['receptive_field'],
+                        inputs_2d, inputs_3d_p
+                    )
+                    inputs_2d_flip, _ = eval_data_prepare(
+                        cfg['DATASET']['dataset_type'],
+                        cfg['DATASET']['receptive_field'],
+                        inputs_2d_flip, inputs_3d_p
+                    )
 
 
                 if torch.cuda.is_available():
@@ -409,7 +410,7 @@ def evaluate(cfg,
                                 return_inference=save_mat,
                             )
 
-                            # 3DHP + JPMA: cache pose for saving .mat
+                            # 3DHP + JPMA: cache pose for saving .mat files
                             if save_mat:
                                 buf = seq_buffers[seq_key]
                                 # each: [B, T, F, J, C]
