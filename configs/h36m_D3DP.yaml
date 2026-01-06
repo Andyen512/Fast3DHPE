@@ -8,7 +8,7 @@ DATASET:
   subjects_test: "S9,S11"             # For semi-supervised use (optional)
   seq_len: 243                   # Number of frames per clip
   downsample: 1                  # Global downsampling factor
-  eval_stride: 243               # Sliding-window stride during evaluation (full segment per window)
+  eval_stride: 243               # Sliding window stride during testing (full sequence per window)
   subset: 1.0                    # Subset ratio (use <1.0 for small-sample experiments)
   receptive_field: 243
   chunk_size: 243
@@ -23,7 +23,9 @@ DATASET:
   
   Test:
     actions: '*'   
-    P2: True         
+    P2: True       
+    Eval_type: 'JPMA' 
+    test_chunked: False  
 
 # ========= Model =========
 MODEL:
@@ -31,7 +33,7 @@ MODEL:
   backbone:
     num_frame: 243   # Align data length
     num_joints: 17
-    in_chans: 5                     # Input channels (2D coordinates x,y)
+    in_chans: 5                     # Input channels (2D coordinates → x,y)
     embed_dim_ratio: 512
     depth: 8
     num_heads: 8
@@ -49,16 +51,16 @@ MODEL:
     boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
 
 # ========= Loss =========
-# LOSS:
-#   type: "MPJPELoss"
-#   log_prefix: "mpjpe"
-#   loss_term_weight: 1.0
-
 LOSS:
-  type: "Dis_MPJPELoss"
+  type: "MPJPELoss"
   log_prefix: "mpjpe"
   loss_term_weight: 1.0
-  boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
+
+# LOSS:
+#   type: "Dis_MPJPELoss"
+#   log_prefix: "mpjpe"
+#   loss_term_weight: 1.0
+#   boneindextemp: '0,1,1,2,2,3,0,4,4,5,5,6,0,7,7,8,8,9,9,10,8,11,11,12,12,13,8,14,14,15,15,16'
 
 
 # ========= Optimizer & Learning Rate =========
@@ -75,7 +77,7 @@ SCHED:
 
 # ========= Training Engine =========
 ENGINE:
-  save_name: "h36m_D3DP_lr00014_lrd993_dismpjpe_torch23"  
+  save_name: "h36m_D3DP_lr00014_lrd993_mpjpe"  
   amp: true                    # Automatic mixed precision
   find_unused_parameters: false
   log_interval: 50
